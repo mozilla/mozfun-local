@@ -1,0 +1,21 @@
+[package]
+name = "mozfun_local"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html[lib]
+crate-type = ["cdylib"]
+
+[target.aarch64-apple-darwin]
+
+[dependencies]
+# serde = { version = "1.0.145", features = ["derive"] }
+rayon = "1.5.3"
+dashmap = "5.4.0"
+serde_json = "1.0.85"
+regex = "1.6.0"
+mimalloc = "0.1.29"
+
+[dependencies.pyo3]
+version = "0.17.1"
+features = ["extension-module"]

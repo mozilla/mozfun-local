@@ -1,0 +1,38 @@
+use std::collections::HashMap;
+
+use pyo3::prelude::*;
+
+#[pyfunction]
+pub fn json_mode_last(data: Vec<&str>) -> PyResult<String> {
+    // Json version of mode_last, pyo3 will coerce types to strings
+    // One-pass mode calculation
+    // Source: https://codereview.stackexchange.com/a/173437
+    if data.is_empty() {
+        return Ok("".to_string());
+    }
+    let mut occurence_map = HashMap::new();
+
+    // max_by_key Returns the element that gives the maximum value from the specified function.
+    // Returns the second argument if the comparison determines them to be equal.
+    // So this conforms to mode_last
+    let highest_occurrence = data.iter().copied().max_by_key(|&i| {
+        let occurences = occurence_map.entry(i).or_insert(0);
+        *occurences += 1;
+        *occurences
+    });
+
+    Ok(highest_occurrence.unwrap().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_mode_last() {
+        // See stats::test_mode_last for more tests
+        let string_vec = vec!["thing1", "thing2", "thing1"];
+
+        assert_eq!(json_mode_last(string_vec).unwrap(), "thing1");
+    }
+}
