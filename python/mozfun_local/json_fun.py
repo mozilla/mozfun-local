@@ -3,7 +3,7 @@ import ast
 
 import pandas as pd
 
-from mozfun_local import json_mode_last as _json_mode_last
+from mozfun_local.mozfun_local_rust import json_mode_last as _json_mode_last
 
 
 def json_mode_last(data: pd.Series) -> int:
@@ -30,12 +30,14 @@ def json_mode_last(data: pd.Series) -> int:
 
 
 def _inner_struct_cast(item):
+    if item["value"] == "Null":
+        return None
     return {int(item["key"]): int(item["value"])}
 
 
 def json_extract_int_map(
     array_of_structs: typing.List[str],
-) -> typing.List[dict[int, int]]:
+) -> typing.Optional[typing.List[dict[int, int]]]:
     """Returns an array of key/value structs from a string representing a JSON map.
     Both keys and values are cast to integers.
 
@@ -53,7 +55,15 @@ def json_extract_int_map(
     Returns:
         typing.List[dict[int, int]]: _description_
     """
-    print(type(array_of_structs[0]))
+    if type(array_of_structs) == list:
+        if len(array_of_structs) == 0 or array_of_structs[0] == {}:
+            return None
+    elif type(array_of_structs) != str:
+        raise (
+            TypeError(
+                f"this function supports lists and raw json in lists, you provided {type(array_of_structs)}"
+            )
+        )
     if type(array_of_structs) == str:
         first_character = array_of_structs[0]
         assert (
@@ -65,16 +75,5 @@ def json_extract_int_map(
             )  # typing.List[str, str]
         except SyntaxError:
             return {}
-    return [_inner_struct_cast(d) for d in array_of_structs]
-
-
-if __name__ == "__main__":
-    list_of_arrays = """[
-        {"key": "0", "value": "12434"},
-        {"key": "1", "value": "297"},
-        {"key": "13", "value": "8"},
-    ]"""
-
-    crunched_list = json_extract_int_map(list_of_arrays)
-
-    print(crunched_list[0].items())
+    result = [_inner_struct_cast(d) for d in array_of_structs]
+    return result if result[0] is not None else None

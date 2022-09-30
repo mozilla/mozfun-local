@@ -8,7 +8,7 @@ pub mod stats;
 // Remember to decorate with #[pyfunction]
 /// A Python module implemented in Rust.
 #[pymodule]
-fn mozfun_local(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(map::map_sum, m)?)?;
     m.add_function(wrap_pyfunction!(map::map_get_key, m)?)?;
     m.add_function(wrap_pyfunction!(stats::mode_last, m)?)?;

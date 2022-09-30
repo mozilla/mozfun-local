@@ -1,9 +1,12 @@
 import typing
+from datetime import date, datetime
+from datetime import timedelta
 
 import pandas as pd
+import numpy as np
 
-from mozfun_local import norm_normalize_os as _norm_normalize_os
-from mozfun_local import VersionTruncator, VersionExtractor
+from mozfun_local.mozfun_local_rust import norm_normalize_os as _norm_normalize_os
+from mozfun_local.mozfun_local_rust import VersionTruncator, VersionExtractor
 
 truncator = None
 extractor = None
@@ -83,7 +86,53 @@ def norm_extract_version(
     return extractor.extract_version(raw_version, part_to_extract)
 
 
-if __name__ == "__main__":
-    print(norm_normalize_os("Android"))
-    print(norm_truncate_version("106.0.1", "minor"))
-    print(norm_extract_version("106.0.1", "patch"))
+def norm_glean_fenix_build_to_date(app_build: str, format: str = "datetime"):
+    """Convert the Fenix client_info.app_build-format string to a DATETIME. Returns None on failure.
+
+    Fenix originally used an 8-digit app_build format. Newer builds use a 10-digit format.
+
+    This function tolerates both formats.
+
+        Args:
+            app_build (str): app_build in string format. Will be cast to string if not.
+            format (str): provide "date" to get a date, or "datetime" to get a dattime. Defauls to "datetime"
+    """
+    if type(app_build) != str:
+        app_build = str(app_build)
+
+    appbuild_len = len(app_build)
+    if appbuild_len not in [
+        8,
+        10,
+    ]:
+        return None
+
+    try:
+        # need to do some bitwise operations here
+        # first cast to int64
+        i64_app_build = np.int64(int(app_build))
+    except:
+        return None
+
+    if appbuild_len == 8:
+        if int(app_build[4:6]) >= 24 or int(app_build[6:]) >= 60:
+            return None
+        corrected_year = int(app_build[0]) + 2018
+
+        builddate = datetime(
+            corrected_year, 1, 1, int(app_build[4:6]), int(app_build[6:])
+        )
+        builddate = builddate + timedelta(days=int(app_build[1:4]) - 1)
+        return builddate.date() if format == "date" else builddate
+
+    # Branchless, this is the 10 digit section
+    base_date = datetime(2014, 12, 28, 0, 0, 0)
+
+    # shift left then right to drop all but 20 rightmost bits
+    # 64-20 = 44
+    shifted_app_build = i64_app_build << 44 >> 44
+
+    # now drop the last 3 of those
+    shifted_app_build = shifted_app_build >> 3
+
+    return base_date + timedelta(hours=float(shifted_app_build))

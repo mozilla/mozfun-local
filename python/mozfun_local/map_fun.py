@@ -1,8 +1,8 @@
 import typing
 
 import pandas as pd
-from mozfun_local import map_sum as _map_sum
-from mozfun_local import map_get_key as _map_get_key
+from mozfun_local_rust import map_sum as _map_sum
+from mozfun_local_rust import map_get_key as _map_get_key
 
 
 T = typing.TypeVar("T")
@@ -55,3 +55,10 @@ def map_get_key(
         return float(result)
     else:
         return result
+
+
+def map_get_key_with_null(s: str, key: str, trim_chars: bool) -> T:
+    """Because we are not in SQL, we just handle null chars as strings.
+
+    This calls map_get_key internally, but with no coercian to int"""
+    return map_get_key(s, key, trim_chars)
