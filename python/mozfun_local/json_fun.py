@@ -1,5 +1,6 @@
-import typing
+from typing import List, Dict, Optional
 import ast
+import json
 
 import pandas as pd
 
@@ -26,6 +27,7 @@ def json_mode_last(data: pd.Series) -> int:
     # result = data.astype(int, errors="ignore").to_list
     # return None if Rust passed back i64::max
     # Rust incurs minimal penalty for use of 64-bit primitives
+    data = [x for x in data["test"].to_list() if x is not None]
     return _json_mode_last(data)
 
 
@@ -36,8 +38,8 @@ def _inner_struct_cast(item):
 
 
 def json_extract_int_map(
-    array_of_structs: typing.List[str],
-) -> typing.Optional[typing.List[dict[int, int]]]:
+    array_of_structs: List[str],
+) -> Optional[List[dict[int, int]]]:
     """Returns an array of key/value structs from a string representing a JSON map.
     Both keys and values are cast to integers.
 
@@ -77,3 +79,32 @@ def json_extract_int_map(
             return {}
     result = [_inner_struct_cast(d) for d in array_of_structs]
     return result if result[0] is not None else None
+
+
+def json_extract_string_map(data: str) -> List[Dict[str, str]]:
+    """Function that parses a BQ array of structs into a python list of dicts.
+
+    All Nulls will be converted to None
+
+    Args:
+        data (str): valid json
+
+    Returns:
+        List[Dict[str, str]]
+
+    """
+
+    json_data = json.loads(data)
+
+    if len(json_data) == 0:
+        return [None]
+
+    output_list = []
+    for (
+        k,
+        v,
+    ) in json_data.items():
+        value = str(v) if v is not None else v
+        output_list.append({"key": k, "value": value})
+
+    return output_list

@@ -16,5 +16,7 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<norm::Matcher>()?;
     m.add_class::<norm::Extractor>()?;
     m.add_function(wrap_pyfunction!(norm::norm_normalize_os, m)?)?;
+    m.add_function(wrap_pyfunction!(json::json_extract_string_map, m)?)?;
+
     Ok(())
 }
