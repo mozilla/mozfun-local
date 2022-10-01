@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+pub mod bytes;
 pub mod json;
 pub mod map;
 pub mod norm;
@@ -16,7 +17,7 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<norm::Matcher>()?;
     m.add_class::<norm::Extractor>()?;
     m.add_function(wrap_pyfunction!(norm::norm_normalize_os, m)?)?;
-    m.add_function(wrap_pyfunction!(json::json_extract_string_map, m)?)?;
+    m.add_function(wrap_pyfunction!(bytes::bytes_bit_pos_to_byte_pos, m)?)?;
 
     Ok(())
 }

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
 use pyo3::prelude::*;
-use serde::Deserializer;
-use serde_json::{Result, Value};
 
 #[pyfunction]
 pub fn json_mode_last(data: Vec<&str>) -> PyResult<String> {
@@ -24,23 +22,6 @@ pub fn json_mode_last(data: Vec<&str>) -> PyResult<String> {
     });
 
     Ok(highest_occurrence.unwrap().to_string())
-}
-
-#[pyfunction]
-pub fn json_extract_string_map(input: &str) -> PyResult<Vec<HashMap<String, String>>> {
-    let result: Vec<HashMap<String, String>> = serde_json::from_str(input).unwrap_or_default();
-
-    // let result_map: Vec<HashMap<String, String>> = Vec::new();
-
-    // if result.len() == 0 {
-    //     return Ok(vec!(HashMap { "None", "None"}));
-    // }
-
-    // for element in result {
-
-    // }
-
-    Ok(result)
 }
 
 #[cfg(test)]

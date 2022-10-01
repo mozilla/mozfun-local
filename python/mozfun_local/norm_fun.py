@@ -5,6 +5,8 @@ from datetime import timedelta
 import pandas as pd
 import numpy as np
 
+from numba import jit
+
 from mozfun_local.mozfun_local_rust import norm_normalize_os as _norm_normalize_os
 from mozfun_local.mozfun_local_rust import VersionTruncator, VersionExtractor
 
@@ -128,11 +130,18 @@ def norm_glean_fenix_build_to_date(app_build: str, format: str = "datetime"):
     # Branchless, this is the 10 digit section
     base_date = datetime(2014, 12, 28, 0, 0, 0)
 
-    # shift left then right to drop all but 20 rightmost bits
-    # 64-20 = 44
-    shifted_app_build = i64_app_build << 44 >> 44
-
-    # now drop the last 3 of those
-    shifted_app_build = shifted_app_build >> 3
+    shifted_app_build = _bitwise_shift_eight_chars(i64_app_build)
 
     return base_date + timedelta(hours=float(shifted_app_build))
+
+
+@jit(nopython=True)
+def _bitwise_shift_eight_chars(x: np.int64):
+    # shift left then right to drop all but 20 rightmost bits
+    # 64-20 = 44
+    x = x << 44 >> 44
+
+    # now drop the last 3 of those
+    x = x >> 3
+
+    return x
