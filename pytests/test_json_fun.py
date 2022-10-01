@@ -22,8 +22,7 @@ def test_json_extract_int_map():
 
     # empty struct inside of a list
     assert json_extract_int_map([{}]) is None
-    # assert.array_equals(
-    # [STRUCT(1 AS key, NULL AS value)],
+
     assert json_extract_int_map([{"key": 1, "value": "Null"}]) is None
 
     with pytest.raises(TypeError):
