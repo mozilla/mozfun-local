@@ -1,5 +1,10 @@
 from typing import Optional, Dict, List
 import ast
+import json
+
+from mozfun_local.mozfun_local_rust import (
+    glean_legacy_compatible_experiments as _glean_legacy_compatible_experiments,
+)
 
 
 def glean_timespan_nanos(
@@ -88,7 +93,9 @@ def glean_timespan_seconds(
     return None
 
 
-def glean_legacy_compatible_experiments(experiment_data) -> Dict[str, list]:
+def glean_legacy_compatible_experiments(
+    experiment_data, rust: bool = True
+) -> Dict[str, list]:
     """Parse experiments from the newer Glean experiment format into the format used by Legacy Telementy. If you provide a string it will be coerced via literal_eval, if that fails returns None.
 
     Args:
@@ -97,17 +104,29 @@ def glean_legacy_compatible_experiments(experiment_data) -> Dict[str, list]:
     Returns:
         Dict[experiment_name, branch_name]
     """
-    if type(experiment_data) == str:
-        experiment_data = ast.literal_eval(experiment_data)
+    data_type = type(experiment_data)
+    if data_type == str:
+        if experiment_data[0] == "[":
+            experiment_data = experiment_data[1:-1]
 
-    experiments = experiment_data[0]["experiments"]
+    elif data_type == list:
+        experiment_data = experiment_data[0]
 
-    experiment_list = []
-    for experiment in experiments:
-        experiment_list.append(
-            {"key": experiment["key"], "value": experiment["value"]["branch"]}
-        )
+    if rust:
+        return _glean_legacy_compatible_experiments(json.dumps(experiment_data))
 
-    experiment_dict = {"experiments": experiment_list}
+    else:
+        if data_type == str:
+            experiment_data = ast.literal_eval(experiment_data)
+
+        experiments = experiment_data["experiments"]
+
+        experiment_list = []
+        for experiment in experiments:
+            experiment_list.append(
+                {"key": experiment["key"], "value": experiment["value"]["branch"]}
+            )
+
+        experiment_dict = {"experiments": experiment_list}
 
     return experiment_dict

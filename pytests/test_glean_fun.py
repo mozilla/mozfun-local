@@ -33,6 +33,9 @@ def test_glean_legacy_experiments():
     result = glean_legacy_compatible_experiments(data)
     assert fixed_data == result
 
+    result_python = glean_legacy_compatible_experiments(data, rust=False)
+    assert fixed_data == result
+
 
 def test_glean_timespan_nanos():
     assert 345_600_000_000_000 == glean_timespan_nanos({"time_unit": "day", "value": 4})

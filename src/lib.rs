@@ -18,6 +18,10 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<norm::Extractor>()?;
     m.add_function(wrap_pyfunction!(norm::norm_normalize_os, m)?)?;
     m.add_function(wrap_pyfunction!(bytes::bytes_bit_pos_to_byte_pos, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        json::glean_legacy_compatible_experiments,
+        m
+    )?)?;
 
     Ok(())
 }
