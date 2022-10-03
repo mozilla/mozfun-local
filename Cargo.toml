@@ -12,8 +12,6 @@ crate-type = ["cdylib"]
 python-source = "python"
 name = "mozfun_local.mozfun_local_rust"
 
-[target.aarch64-apple-darwin]
-
 [dependencies]
 rayon = "1.5.3"
 dashmap = "5.4.0"
@@ -22,7 +20,20 @@ regex = "1.6.0"
 mimalloc = "0.1.29"
 serde = {version = "1.0.145", features = ["derive"]}
 libmath = "0.2.1"
+pyo3 = "0.17.1"
 
-[dependencies.pyo3]
-version = "0.17.1"
-features = ["extension-module"]
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
+
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]
+
+[target.aarch64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]

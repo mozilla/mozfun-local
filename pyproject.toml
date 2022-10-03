@@ -14,3 +14,6 @@ dependencies = [
 
 [tool.maturin]
 python-source = "python"
+bindings = "pyo3"
+profile = "release"
+all-features = true

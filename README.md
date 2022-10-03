@@ -23,11 +23,13 @@ If your variables are not already in Numpy datatypes, typically yes. Consider th
 
 Numpy: ```np.int64(x) << 44 >> 44 << 3```
 
-Numba JIT: 35.67ms
+Numba JIT: .0363ms
 
 Rust: ```x.parse::<i64>().unwrap() << 44 >> 44 << 3```
 
-Release: 34.67ms
+Release: .0344ms
+
+Obviously this isn't much difference, so it really comes down to which paradigm you prefer. JITed Numpy is certainly easy to write, though whether it's behaving to your expectation can be hard to intuit. Rust, while less terse, will do exactly what you tell it. Plus, if Numba fails back, it  will be MUCH slower, and this failure may not be trivial to work around.
 ## Requirements
 
 * Rust >= 1.60
@@ -41,7 +43,7 @@ This package can be built by invoking ```maturin develop --release``` in the top
 
 ## Testing
 
-Testing rust: ```cargo test```
+Testing rust: ```cargo test --no-default-features:w```
 
 Testing python: ```python -m pytest pytests/*```
 
