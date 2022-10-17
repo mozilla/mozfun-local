@@ -56,7 +56,7 @@ def norm_truncate_version(
     truncator = VersionTruncator()
 
     if truncate_to_version == "major":
-        return truncator.find_minor_version(raw_version)
+        return truncator.find_major_version(raw_version)
     if truncate_to_version == "minor":
         return truncator.find_minor_version(raw_version)
     else:
