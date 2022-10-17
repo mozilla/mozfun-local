@@ -43,7 +43,7 @@ This package can be built by invoking ```maturin develop --release``` in the top
 
 ## Testing
 
-Testing rust: ```cargo test --no-default-features:w```
+Testing rust: ```cargo test --no-default-features```
 
 Testing python: ```python -m pytest pytests/*```
 
