@@ -1,8 +1,6 @@
 import typing
-from datetime import date, datetime
-from datetime import timedelta
+from datetime import (timedelta, datetime)
 
-import pandas as pd
 import numpy as np
 
 from numba import jit
@@ -15,8 +13,8 @@ extractor = None
 
 
 def norm_normalize_os(os: str) -> str:
-    """Normalize an operating system string to one of the three major desktop platforms,
-    one of the two major mobile platforms, or "Other".
+    """Normalize an operating system string to one of the three major desktop
+    platforms, one of the two major mobile platforms, or "Other".
     Reimplementation of logic used in the data pipeline:
     https://github.com/mozilla/gcp-ingestion/blob/a6928fb089f1652856147c4605df715f327edfcd/ingestion-beam/src/main/java/com/mozilla/telemetry/transforms/NormalizeAttributes.java#L52-L74
 
@@ -34,7 +32,8 @@ def norm_normalize_os(os: str) -> str:
 def norm_truncate_version(
     raw_version: str, truncate_to_version: str
 ) -> typing.Optional[int]:
-    """Extracts numeric version data from a version string like <major>.<minor>.<patch>.
+    """Extracts numeric version data from a version string like:
+        <major>.<minor>.<patch>.
 
     Note: Non-zero minor and patch versions will be floating point Numeric.
 
