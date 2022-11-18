@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod bytes;
+pub mod glam;
 pub mod json;
 pub mod map;
 pub mod norm;
