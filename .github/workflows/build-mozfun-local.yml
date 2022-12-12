@@ -1,0 +1,5 @@
+- uses: dtolnay/rust-toolchain@stable
+- uses: PyO3/maturin-action@v1
+  with:
+    command: build
+    args: --release
