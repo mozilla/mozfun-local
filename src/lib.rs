@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod bytes;
+pub mod glam;
 pub mod json;
 pub mod map;
 pub mod norm;
@@ -22,6 +23,8 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
         json::glean_legacy_compatible_experiments,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(glam::calculate_dirichlet_distribution, m)?)?;
+    m.add_function(wrap_pyfunction!(glam::normalize_histogram, m)?)?;
 
     Ok(())
 }
