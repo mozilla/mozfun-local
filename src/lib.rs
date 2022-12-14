@@ -12,6 +12,8 @@ pub mod stats;
 #[pymodule]
 fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(map::map_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(map::float_map_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(map::int_map_sum, m)?)?;
     m.add_function(wrap_pyfunction!(map::map_get_key, m)?)?;
     m.add_function(wrap_pyfunction!(stats::mode_last, m)?)?;
     m.add_function(wrap_pyfunction!(json::json_mode_last, m)?)?;

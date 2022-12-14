@@ -30,6 +30,45 @@ pub fn map_sum(r: Vec<(&str, f64)>) -> PyResult<HashMap<&str, f64>> {
         .collect::<HashMap<&str, f64>>())
 }
 
+/// Sum of a groupby of numeric keys and int values
+/// Generics cannot be used due to exposing this in Python
+#[pyfunction]
+pub fn int_map_sum(r: Vec<(u64, u64)>) -> PyResult<HashMap<u64, u64>> {
+    let result_map = DashMap::new();
+    let arc_result_map = Arc::new(result_map);
+
+    r.par_iter().for_each(|x| {
+        let arc_result_map_clone = arc_result_map.clone();
+        let _ = *arc_result_map_clone
+            .entry(x.0)
+            .and_modify(|y| *y += x.1)
+            .or_insert(x.1);
+    });
+
+    let unwraped_result_map = Arc::try_unwrap(arc_result_map).expect("rc not zero");
+
+    Ok(unwraped_result_map.into_iter().collect())
+}
+
+/// Sum of a groupby of numeric keys and float values
+#[pyfunction]
+pub fn float_map_sum(r: Vec<(u64, f64)>) -> PyResult<HashMap<u64, f64>> {
+    let result_map = DashMap::new();
+    let arc_result_map = Arc::new(result_map);
+
+    r.par_iter().for_each(|x| {
+        let arc_result_map_clone = arc_result_map.clone();
+        let _ = *arc_result_map_clone
+            .entry(x.0)
+            .and_modify(|y| *y += x.1)
+            .or_insert(x.1);
+    });
+
+    let unwraped_result_map = Arc::try_unwrap(arc_result_map).expect("rc not zero");
+
+    Ok(unwraped_result_map.into_iter().collect())
+}
+
 /// Parse a string with json array in it
 #[pyfunction]
 pub fn map_get_key(input: &str, key: &str, trim: bool) -> PyResult<String> {
