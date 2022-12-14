@@ -1,8 +1,8 @@
 import typing
 
 import pandas as pd
-from mozfun_local_rust import map_sum as _map_sum
-from mozfun_local_rust import map_get_key as _map_get_key
+from mozfun_local.mozfun_local_rust import map_sum as _map_sum
+from mozfun_local.mozfun_local_rust import map_get_key as _map_get_key
 
 
 T = typing.TypeVar("T")

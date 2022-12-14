@@ -47,7 +47,7 @@ fn generate_functional_buckets(
     buckets_per_magnitude: usize,
     range_max: usize,
 ) -> Vec<usize> {
-    let mut buckets = HashSet::with_capacity(range_max);
+    let mut buckets = HashSet::new();
     buckets.insert(0);
 
     let max_bucket_id = sample_to_bucket_idx(
@@ -67,6 +67,33 @@ fn generate_functional_buckets(
     }
 
     Vec::from_iter(buckets)
+}
+
+fn generate_exponential_buckets(
+    min_bucket: usize,
+    max_bucket: usize,
+    n_buckets: usize,
+) -> Vec<usize> {
+    let log_max = f64::ln(max_bucket as f64);
+    let mut current = min_bucket.max(1);
+
+    let mut out_array = vec![0, current];
+    let stop = (n_buckets.min(10_000)).min(max_bucket);
+
+    for bucket_idx in 2..stop {
+        let log_current = f64::ln(current as f64);
+        let log_next = ((log_max - log_current) / ((n_buckets - bucket_idx) as f64)) + log_current;
+        let next_value = f64::round(f64::exp(log_next)) as usize;
+        if next_value > current {
+            out_array.push(next_value);
+            current = next_value;
+        } else {
+            out_array.push(current + 1);
+            current += 1;
+        }
+    }
+
+    out_array
 }
 
 fn count_users(hist: &mut HashMap<usize, f64>) -> usize {
@@ -132,10 +159,14 @@ pub fn calculate_dirichlet_distribution(
     let _range_min = hist.keys().min().unwrap().clone(); // handle errors later
     let histogram_type = Distribution::from_str(histogram_type);
 
+    let n_buckets = 50; // investigate taking None as input
+
     let buckets = match histogram_type {
         Ok(Distribution::TimingDistribution) => generate_functional_buckets(2, 8, range_max),
         Ok(Distribution::MemoryDistribution) => generate_functional_buckets(2, 16, range_max),
-        Ok(Distribution::CustomDistributionExponential) => todo!(),
+        Ok(Distribution::CustomDistributionExponential) => {
+            generate_exponential_buckets(0, 1_000, n_buckets)
+        }
         Ok(Distribution::CustomDistributionLinear) => todo!(),
         _ => return Err(PyErr::new::<PyTypeError, _>("Invalid Histogram Type")),
     };

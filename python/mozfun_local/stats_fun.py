@@ -1,7 +1,7 @@
 import typing
 
 import pandas as pd
-from mozfun_local_rust import stats_mode_last as _stats_mode_last
+from mozfun_local.mozfun_local_rust import stats_mode_last as _stats_mode_last
 
 
 T = typing.TypeVar("T")
