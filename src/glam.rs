@@ -1,3 +1,4 @@
+use crate::hist::parse_main_histograms;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use std::hash::Hash;
@@ -28,7 +29,7 @@ impl FromStr for Distribution {
     }
 }
 
-fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> Vec<(usize, f64)> {
+fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
     // non-concurrent normalization, because GLAM aggregation is partitioned
     // and the concurrency makes more sense on those partitions.
     let total = hist.values().sum::<i64>() as f64;
@@ -38,15 +39,14 @@ fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> Vec<(usize, f64)> {
         .collect()
 }
 
-fn map_sum_generic<T: Hash + Eq + Copy, U: AddAssign + Copy>(
-    keys: Vec<T>,
-    values: Vec<U>,
-) -> HashMap<T, U> {
-    // generic version of map sum, cannot be exposed to python easily
+fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -> HashMap<T, U> {
+    // generic version of map sum, cannot be exposed to python
     let mut result_map = HashMap::new();
 
-    for (k, v) in keys.iter().zip(values.iter()) {
-        result_map.entry(*k).and_modify(|y| *y += *v).or_insert(*v);
+    for m in maps {
+        for (k, v) in m {
+            result_map.entry(k).and_modify(|y| *y += v).or_insert(v);
+        }
     }
 
     result_map
@@ -203,54 +203,72 @@ fn calculate_dirichlet_distribution(
     Ok(hist)
 }
 
-fn glam_style_histogram(filepath: &str) -> Vec<(String, HashMap<usize, f64>)> {
-    let data = CsvReader::from_path(filepath).unwrap().finish().unwrap();
+fn glam_style_histogram(filepath: &str) {
+    //-> Vec<(String, HashMap<usize, f64>)> {
+    //let data = CsvReader::from_path(filepath).unwrap().finish().unwrap();
 
-    let partitioned_data = data.partition_by(["build_id"]).unwrap();
+    let lines = include_str!("/Users/pmcmanis/rust_hist_all/some_data.txt")
+        .lines()
+        .map(|x| x.to_string())
+        .collect::<Vec<String>>();
 
-    let mut results = Vec::new();
+    let parsed = parse_main_histograms(lines);
 
-    for df in partitioned_data {
-        let build_id = df
-            .column("build_id")
-            .unwrap()
-            .str_value(0) // cow<str>
-            .unwrap()
-            .to_string();
-        let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+    let agged = map_sum(parsed);
 
-        let mut client_levels = Vec::new();
+    let normed = normalize_histogram_glam(agged);
 
-        for d in client_level_dfs {
-            let columns = d.select_series(&["key", "value"]).unwrap();
-            let keys = columns[0].i64().unwrap().into_no_null_iter().collect();
-            let values = columns[1].i64().unwrap().into_no_null_iter().collect();
+    let dir = calculate_dirichlet_distribution(normed, "custom_distribution_exponential", 50);
 
-            let client_aggregatted = map_sum_generic(keys, values);
-            let client_normed = normalize_histogram_glam(client_aggregatted);
+    dbg!(dir.unwrap());
 
-            client_levels.extend_from_slice(&client_normed);
-        }
+    // let partitioned_data = data.partition_by(["build_id"]).unwrap();
 
-        let build_histograms = float_map_sum_tuples(client_levels);
+    // let mut results = Vec::new();
 
-        let dirichlet_transformed_hists = calculate_dirichlet_distribution(
-            build_histograms,
-            "custom_distribution_exponential",
-            50,
-        )
-        .unwrap();
+    // for df in partitioned_data {
+    //     let build_id = df
+    //         .column("build_id")
+    //         .unwrap()
+    //         .str_value(0) // cow<str>
+    //         .unwrap()
+    //         .to_string();
+    //     let client_level_dfs = df.partition_by(["client_id"]).unwrap();
 
-        results.push((build_id, dirichlet_transformed_hists));
-    }
-    results
+    //     let mut client_levels = Vec::new();
+
+    //     for d in client_level_dfs {
+    //         let columns = d.select_series(&["key", "value"]).unwrap();
+    //         let keys = columns[0].i64().unwrap().into_no_null_iter().collect();
+    //         let values = columns[1].i64().unwrap().into_no_null_iter().collect();
+
+    //         let client_aggregatted = map_sum(keys, values);
+    //         let client_normed = normalize_histogram_glam(client_aggregatted);
+
+    //         client_levels.extend_from_slice(&client_normed);
+    //     }
+
+    //     let build_histograms = float_map_sum_tuples(client_levels);
+
+    //     let dirichlet_transformed_hists = calculate_dirichlet_distribution(
+    //         build_histograms,
+    //         "custom_distribution_exponential",
+    //         50,
+    //     )
+    //     .unwrap();
+
+    //     results.push((build_id, dirichlet_transformed_hists));
+    // }
+    //results
 }
 
 #[pyfunction]
-pub fn test_runner(csv_path: &str) -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
-    let results = glam_style_histogram(csv_path);
+pub fn test_runner(csv_path: &str) {
+    // -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
+    //let results = glam_style_histogram(csv_path);
 
-    Ok(results)
+    glam_style_histogram(csv_path);
+    //Ok(results)
 }
 
 #[cfg(test)]
