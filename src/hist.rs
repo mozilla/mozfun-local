@@ -39,21 +39,21 @@ impl MainHistogram {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HistogramMetaData {
-    probe: String,
-    histogram_type: String,
-    process: String,
-    probe_location: String,
-    buckets_key: String,
-    buckets_for_probe: Vec<usize>,
+pub struct HistogramMetaData {
+    pub probe: String,
+    pub histogram_type: String,
+    pub process: String,
+    pub probe_location: String,
+    pub buckets_key: String,
+    pub buckets_for_probe: Vec<usize>,
 }
 
-fn parse_metadata_json(s: &str) -> Result<HistogramMetaData, serde_json::error::Error> {
+pub fn parse_metadata_json(s: &str) -> Result<HistogramMetaData, serde_json::error::Error> {
     serde_json::from_str(s)
 }
 
-pub fn parse_main_histograms(v: Vec<String>) -> Vec<HashMap<i64, i64>> {
+pub fn parse_main_histograms(v: Vec<Option<&str>>) -> Vec<HashMap<i64, i64>> {
     v.into_iter()
-        .map(|s| parse_data_json(s.as_str()).unwrap().clamp_keys())
+        .map(|s| parse_data_json(s.unwrap()).unwrap().clamp_keys())
         .collect()
 }

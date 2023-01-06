@@ -1,6 +1,7 @@
-use crate::hist::parse_main_histograms;
+use crate::hist::{parse_main_histograms, parse_metadata_json, HistogramMetaData};
 use polars::prelude::*;
 use pyo3::prelude::*;
+use pyo3_polars::PyDataFrame;
 use std::hash::Hash;
 use std::ops::AddAssign;
 use std::{
@@ -52,19 +53,19 @@ fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -
     result_map
 }
 
-fn float_map_sum_tuples(r: Vec<(usize, f64)>) -> HashMap<usize, f64> {
-    // non-concurrent map sum specifically for glam transformations
-    let mut result_map = HashMap::new();
+// fn float_map_sum_tuples(r: Vec<(usize, f64)>) -> HashMap<usize, f64> {
+//     // non-concurrent map sum specifically for glam transformations
+//     let mut result_map = HashMap::new();
 
-    r.iter().for_each(|x| {
-        result_map
-            .entry(x.0)
-            .and_modify(|y| *y += x.1)
-            .or_insert(x.1);
-    });
+//     r.iter().for_each(|x| {
+//         result_map
+//             .entry(x.0)
+//             .and_modify(|y| *y += x.1)
+//             .or_insert(x.1);
+//     });
 
-    result_map
-}
+//     result_map
+// }
 
 fn sample_to_bucket_idx(sample: f64, log_base: f64, buckets_per_magnitude: f64) -> usize {
     let exponent = f64::powf(log_base, 1f64 / buckets_per_magnitude);
@@ -153,7 +154,7 @@ fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
 
 fn calculate_dirichlet_distribution(
     histogram_vector: HashMap<usize, f64>,
-    histogram_type: &str,
+    histogram_type: String,
     n_buckets: usize,
 ) -> Result<HashMap<usize, f64>, String> {
     // 1. aggregate client level histograms <- per client level
@@ -185,7 +186,7 @@ fn calculate_dirichlet_distribution(
                                                         // not sure this clone is necessary but it
                                                         // feels like it might be
     let _range_min = hist.keys().min().unwrap().clone(); // handle errors later
-    let histogram_type = Distribution::from_str(histogram_type);
+    let histogram_type = Distribution::from_str(histogram_type.as_str());
 
     let buckets = match histogram_type {
         Ok(Distribution::TimingDistribution) => generate_functional_buckets(2, 8, range_max),
@@ -203,71 +204,68 @@ fn calculate_dirichlet_distribution(
     Ok(hist)
 }
 
-fn glam_style_histogram(filepath: &str) {
-    //-> Vec<(String, HashMap<usize, f64>)> {
-    //let data = CsvReader::from_path(filepath).unwrap().finish().unwrap();
+fn glam_style_histogram(
+    pydf: PyDataFrame,
+    metadata: HistogramMetaData,
+) -> Vec<(i64, HashMap<usize, f64>)> {
+    let probe = metadata.probe.as_str();
+    let data: DataFrame = pydf.into();
 
-    let lines = include_str!("/Users/pmcmanis/rust_hist_all/some_data.txt")
-        .lines()
-        .map(|x| x.to_string())
-        .collect::<Vec<String>>();
+    let partitioned_data = data.partition_by(["build_id"]).unwrap();
 
-    let parsed = parse_main_histograms(lines);
+    let mut results = Vec::new();
 
-    let agged = map_sum(parsed);
+    for df in partitioned_data {
+        let build_id = df
+            .column("build_id")
+            .unwrap()
+            .i64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+        let mut client_levels = Vec::new();
 
-    let normed = normalize_histogram_glam(agged);
+        for d in client_level_dfs {
+            let metric_column = d.select_series(&[probe]).unwrap();
 
-    let dir = calculate_dirichlet_distribution(normed, "custom_distribution_exponential", 50);
+            let histograms_raw = metric_column[0]
+                .utf8()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let histograms_parsed = parse_main_histograms(histograms_raw);
 
-    dbg!(dir.unwrap());
+            let client_aggregatted = map_sum(histograms_parsed);
+            let client_normed = normalize_histogram_glam(client_aggregatted);
 
-    // let partitioned_data = data.partition_by(["build_id"]).unwrap();
+            client_levels.push(client_normed);
+        }
 
-    // let mut results = Vec::new();
+        let build_histograms = map_sum(client_levels);
 
-    // for df in partitioned_data {
-    //     let build_id = df
-    //         .column("build_id")
-    //         .unwrap()
-    //         .str_value(0) // cow<str>
-    //         .unwrap()
-    //         .to_string();
-    //     let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+        let dirichlet_transformed_hists = calculate_dirichlet_distribution(
+            build_histograms,
+            metadata.histogram_type.clone(),
+            metadata.buckets_for_probe[2],
+        )
+        .unwrap();
 
-    //     let mut client_levels = Vec::new();
-
-    //     for d in client_level_dfs {
-    //         let columns = d.select_series(&["key", "value"]).unwrap();
-    //         let keys = columns[0].i64().unwrap().into_no_null_iter().collect();
-    //         let values = columns[1].i64().unwrap().into_no_null_iter().collect();
-
-    //         let client_aggregatted = map_sum(keys, values);
-    //         let client_normed = normalize_histogram_glam(client_aggregatted);
-
-    //         client_levels.extend_from_slice(&client_normed);
-    //     }
-
-    //     let build_histograms = float_map_sum_tuples(client_levels);
-
-    //     let dirichlet_transformed_hists = calculate_dirichlet_distribution(
-    //         build_histograms,
-    //         "custom_distribution_exponential",
-    //         50,
-    //     )
-    //     .unwrap();
-
-    //     results.push((build_id, dirichlet_transformed_hists));
-    // }
-    //results
+        results.push((build_id, dirichlet_transformed_hists));
+    }
+    results
 }
 
 #[pyfunction]
-pub fn test_runner(csv_path: &str) {
-    // -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
-    //let results = glam_style_histogram(csv_path);
+pub fn test_runner(pydf: PyDataFrame) {
+    let metadata = r#"{"probe": "wr_renderer_time", "histogram_type": "custom_distribution_exponential", "process": "parent", "probe_location": "payload.histograms.wr_renderer_time", "buckets_key": "min, max, n_buckets", "buckets_for_probe": [1, 1000, 50]}"#;
 
-    glam_style_histogram(csv_path);
+    let md = parse_metadata_json(metadata).unwrap();
+
+    // let column = "wr_renderer_time";
+    let results = glam_style_histogram(pydf, md);
+
+    dbg!(results);
     //Ok(results)
 }
 

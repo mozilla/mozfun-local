@@ -685,6 +685,7 @@ dependencies = [
  "mimalloc",
  "polars",
  "pyo3",
+ "pyo3-polars",
  "rayon",
  "regex",
  "serde",
@@ -1084,6 +1085,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pyo3-polars"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8229d0699bd1339ac0cd0bfc4c91342ad8fcaa781fcc229b488063e9a779f92"
+dependencies = [
+ "arrow2",
+ "polars",
+ "polars-core",
+ "pyo3",
+ "thiserror",
 ]
 
 [[package]]
