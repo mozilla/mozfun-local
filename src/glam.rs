@@ -1,20 +1,13 @@
-use pyo3::{exceptions::PyTypeError, prelude::*};
+use crate::hist::{parse_main_histograms, parse_metadata_json, HistogramMetaData};
+use polars::prelude::*;
+use pyo3::prelude::*;
+use pyo3_polars::PyDataFrame;
+use std::hash::Hash;
+use std::ops::AddAssign;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-
-#[pyfunction]
-pub fn normalize_histogram(hist: HashMap<usize, f64>) -> PyResult<HashMap<usize, f64>> {
-    // Normalization of histogram. New values will be the existing value
-    // divided by the total accross all buckets.
-    let total: f64 = hist.values().sum();
-
-    Ok(hist
-        .iter()
-        .map(|(k, v)| (*k, *v / total))
-        .collect::<HashMap<usize, f64>>())
-}
 
 enum Distribution {
     TimingDistribution,
@@ -36,6 +29,43 @@ impl FromStr for Distribution {
         }
     }
 }
+
+fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
+    // non-concurrent normalization, because GLAM aggregation is partitioned
+    // and the concurrency makes more sense on those partitions.
+    let total = hist.values().sum::<i64>() as f64;
+
+    hist.iter()
+        .map(|(k, v)| (*k as usize, *v as f64 / total))
+        .collect()
+}
+
+fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -> HashMap<T, U> {
+    // generic version of map sum, cannot be exposed to python
+    let mut result_map = HashMap::new();
+
+    for m in maps {
+        for (k, v) in m {
+            result_map.entry(k).and_modify(|y| *y += v).or_insert(v);
+        }
+    }
+
+    result_map
+}
+
+// fn float_map_sum_tuples(r: Vec<(usize, f64)>) -> HashMap<usize, f64> {
+//     // non-concurrent map sum specifically for glam transformations
+//     let mut result_map = HashMap::new();
+
+//     r.iter().for_each(|x| {
+//         result_map
+//             .entry(x.0)
+//             .and_modify(|y| *y += x.1)
+//             .or_insert(x.1);
+//     });
+
+//     result_map
+// }
 
 fn sample_to_bucket_idx(sample: f64, log_base: f64, buckets_per_magnitude: f64) -> usize {
     let exponent = f64::powf(log_base, 1f64 / buckets_per_magnitude);
@@ -122,12 +152,11 @@ fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
     });
 }
 
-#[pyfunction]
-pub fn calculate_dirichlet_distribution(
+fn calculate_dirichlet_distribution(
     histogram_vector: HashMap<usize, f64>,
-    histogram_type: &str,
-) -> PyResult<HashMap<usize, f64>> {
-    // this will be a PyResult so mocking this for now
+    histogram_type: String,
+    n_buckets: usize,
+) -> Result<HashMap<usize, f64>, String> {
     // 1. aggregate client level histograms <- per client level
     // client_id || [bucket: sum, bucket: sum...]
     //
@@ -157,9 +186,7 @@ pub fn calculate_dirichlet_distribution(
                                                         // not sure this clone is necessary but it
                                                         // feels like it might be
     let _range_min = hist.keys().min().unwrap().clone(); // handle errors later
-    let histogram_type = Distribution::from_str(histogram_type);
-
-    let n_buckets = 50; // investigate taking None as input
+    let histogram_type = Distribution::from_str(histogram_type.as_str());
 
     let buckets = match histogram_type {
         Ok(Distribution::TimingDistribution) => generate_functional_buckets(2, 8, range_max),
@@ -168,13 +195,78 @@ pub fn calculate_dirichlet_distribution(
             generate_exponential_buckets(0, 1_000, n_buckets)
         }
         Ok(Distribution::CustomDistributionLinear) => todo!(),
-        _ => return Err(PyErr::new::<PyTypeError, _>("Invalid Histogram Type")),
+        _ => return Err("Invalid Histogram Type".to_string()),
     };
 
     fill_buckets(&mut hist, &buckets);
     transform_to_dirichlet_estimator(&mut hist, n_reporting);
 
     Ok(hist)
+}
+
+fn glam_style_histogram(
+    pydf: PyDataFrame,
+    metadata: HistogramMetaData,
+) -> Vec<(i64, HashMap<usize, f64>)> {
+    let probe = metadata.probe.as_str();
+    let data: DataFrame = pydf.into();
+
+    let partitioned_data = data.partition_by(["build_id"]).unwrap();
+
+    let mut results = Vec::new();
+
+    for df in partitioned_data {
+        let build_id = df
+            .column("build_id")
+            .unwrap()
+            .i64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+        let mut client_levels = Vec::new();
+
+        for d in client_level_dfs {
+            let metric_column = d.select_series(&[probe]).unwrap();
+
+            let histograms_raw = metric_column[0]
+                .utf8()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let histograms_parsed = parse_main_histograms(histograms_raw);
+
+            let client_aggregatted = map_sum(histograms_parsed);
+            let client_normed = normalize_histogram_glam(client_aggregatted);
+
+            client_levels.push(client_normed);
+        }
+
+        let build_histograms = map_sum(client_levels);
+
+        let dirichlet_transformed_hists = calculate_dirichlet_distribution(
+            build_histograms,
+            metadata.histogram_type.clone(),
+            metadata.buckets_for_probe[2],
+        )
+        .unwrap();
+
+        results.push((build_id, dirichlet_transformed_hists));
+    }
+    results
+}
+
+#[pyfunction]
+pub fn test_runner(pydf: PyDataFrame) {
+    let metadata = r#"{"probe": "wr_renderer_time", "histogram_type": "custom_distribution_exponential", "process": "parent", "probe_location": "payload.histograms.wr_renderer_time", "buckets_key": "min, max, n_buckets", "buckets_for_probe": [1, 1000, 50]}"#;
+
+    let md = parse_metadata_json(metadata).unwrap();
+
+    // let column = "wr_renderer_time";
+    let results = glam_style_histogram(pydf, md);
+
+    dbg!(results);
+    //Ok(results)
 }
 
 #[cfg(test)]
@@ -199,8 +291,9 @@ mod tests {
     #[test]
     fn test_normalize_histogram() {
         let comp_hist: HashMap<usize, f64> = HashMap::from_iter([(2, 0.5), (11, 0.5)]);
-        let input_hist: HashMap<usize, f64> = HashMap::from_iter([(11, 1.0), (2, 1.0)]);
-        let test_hist = normalize_histogram(input_hist).unwrap();
+        let input_hist: HashMap<i64, i64> = HashMap::from_iter([(11, 1), (2, 1)]);
+        let test_hist_vec = normalize_histogram_glam(input_hist);
+        let test_hist = HashMap::from_iter(test_hist_vec);
 
         assert_eq!(comp_hist, test_hist)
     }
@@ -217,5 +310,34 @@ mod tests {
         buckets.sort();
 
         assert_eq!(target, buckets);
+    }
+
+    #[test]
+    fn test_exponential_buckets_1() {
+        let comp_buckets = vec![
+            0usize, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 17, 20, 24, 29, 34, 40, 48, 57, 68, 81, 96,
+            114, 135, 160, 190, 226, 268, 318, 378, 449, 533, 633, 752, 894, 1062, 1262, 1500,
+            1782, 2117, 2516, 2990, 3553, 4222, 5017, 5961, 7083, 8416, 10000,
+        ];
+
+        let test_buckets = generate_exponential_buckets(0, 10000, 50);
+
+        assert_eq!(comp_buckets, test_buckets);
+    }
+
+    #[test]
+    fn test_exponential_buckets_2() {
+        let comp_buckets = vec![0usize, 1, 3, 10, 32, 101, 319, 1006, 3172, 10000];
+        let test_buckets = generate_exponential_buckets(0, 10000, 10);
+
+        assert_eq!(comp_buckets, test_buckets);
+    }
+
+    #[test]
+    fn test_exponential_buckets_3() {
+        let comp_buckets = vec![0usize, 1, 3, 10, 32, 101, 319, 1006, 3172, 10000];
+        let test_buckets = generate_exponential_buckets(1, 10000, 10);
+
+        assert_eq!(test_buckets, comp_buckets);
     }
 }

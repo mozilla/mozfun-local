@@ -21,19 +21,21 @@ mimalloc = "0.1.29"
 serde = {version = "1.0.145", features = ["derive"]}
 libmath = "0.2.1"
 pyo3 = "0.17.1"
+polars = {version = "0.26.1", features = ["lazy", "partition_by"]}
+pyo3-polars = "0.1.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 
-[target.x86_64-apple-darwin]
-rustflags = [
-  "-C", "link-arg=-undefined",
-  "-C", "link-arg=dynamic_lookup",
-]
+# [target.x86_64-apple-darwin]
+# rustflags = [
+#   "-C", "link-arg=-undefined",
+#   "-C", "link-arg=dynamic_lookup",
+# ]
 
-[target.aarch64-apple-darwin]
-rustflags = [
-  "-C", "link-arg=-undefined",
-  "-C", "link-arg=dynamic_lookup",
-]
+# [target.aarch64-apple-darwin]
+# rustflags = [
+#   "-C", "link-arg=-undefined",
+#   "-C", "link-arg=dynamic_lookup",
+# ]
