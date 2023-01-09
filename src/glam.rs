@@ -1,4 +1,4 @@
-use crate::hist::{parse_main_histograms, parse_metadata_json, HistogramMetaData};
+use crate::hist::{parse_main_histograms, parse_metadata_json};
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
@@ -52,20 +52,6 @@ fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -
 
     result_map
 }
-
-// fn float_map_sum_tuples(r: Vec<(usize, f64)>) -> HashMap<usize, f64> {
-//     // non-concurrent map sum specifically for glam transformations
-//     let mut result_map = HashMap::new();
-
-//     r.iter().for_each(|x| {
-//         result_map
-//             .entry(x.0)
-//             .and_modify(|y| *y += x.1)
-//             .or_insert(x.1);
-//     });
-
-//     result_map
-// }
 
 fn sample_to_bucket_idx(sample: f64, log_base: f64, buckets_per_magnitude: f64) -> usize {
     let exponent = f64::powf(log_base, 1f64 / buckets_per_magnitude);
@@ -204,10 +190,13 @@ fn calculate_dirichlet_distribution(
     Ok(hist)
 }
 
-fn glam_style_histogram(
+#[pyfunction]
+pub fn glam_style_histogram(
     pydf: PyDataFrame,
-    metadata: HistogramMetaData,
-) -> Vec<(i64, HashMap<usize, f64>)> {
+    metadata: String,
+) -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
+    let metadata = parse_metadata_json(&metadata).unwrap();
+
     let probe = metadata.probe.as_str();
     let data: DataFrame = pydf.into();
 
@@ -219,10 +208,9 @@ fn glam_style_histogram(
         let build_id = df
             .column("build_id")
             .unwrap()
-            .i64()
+            .str_value(0)
             .unwrap()
-            .get(0)
-            .unwrap();
+            .to_string();
         let client_level_dfs = df.partition_by(["client_id"]).unwrap();
         let mut client_levels = Vec::new();
 
@@ -253,40 +241,25 @@ fn glam_style_histogram(
 
         results.push((build_id, dirichlet_transformed_hists));
     }
-    results
+    Ok(results)
 }
 
-#[pyfunction]
-pub fn test_runner(pydf: PyDataFrame) {
-    let metadata = r#"{"probe": "wr_renderer_time", "histogram_type": "custom_distribution_exponential", "process": "parent", "probe_location": "payload.histograms.wr_renderer_time", "buckets_key": "min, max, n_buckets", "buckets_for_probe": [1, 1000, 50]}"#;
+//#[pyfunction]
+//pub fn test_runner(pydf: PyDataFrame) {
+//    let metadata = r#"{"probe": "wr_renderer_time", "histogram_type": "custom_distribution_exponential", "process": "parent", "probe_location": "payload.histograms.wr_renderer_time", "buckets_key": "min, max, n_buckets", "buckets_for_probe": [1, 1000, 50]}"#;
 
-    let md = parse_metadata_json(metadata).unwrap();
+//    let md = parse_metadata_json(metadata).unwrap();
 
-    // let column = "wr_renderer_time";
-    let results = glam_style_histogram(pydf, md);
+//    // let column = "wr_renderer_time";
+//    let results = glam_style_histogram(pydf, md);
 
-    dbg!(results);
-    //Ok(results)
-}
+//    dbg!(results);
+//    //Ok(results)
+//}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_make_a_dirichlet() {
-        let comp_hist: HashMap<usize, f64> = HashMap::from_iter([
-            (0, (1.0 + (1.0 / 3.0)) / 3.0),
-            (1, 1.0 / 9.0),
-            (2, (2.0 + (1.0 / 3.0)) / 3.0),
-        ]);
-
-        let test_hist: HashMap<usize, f64> = HashMap::from_iter([(0, 1.0), (2, 2.0)]);
-
-        let result = calculate_dirichlet_distribution(test_hist, "timing_distribution").unwrap();
-
-        assert_eq!(comp_hist, result);
-    }
 
     #[test]
     fn test_normalize_histogram() {

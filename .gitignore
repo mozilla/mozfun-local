@@ -75,3 +75,6 @@ docs/_build/
 scratch.*
 scratch*
 scratch/
+
+histograms.txt
+keyed_histograms.txt
