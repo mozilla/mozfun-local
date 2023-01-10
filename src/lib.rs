@@ -27,7 +27,7 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(hist::normalize_histogram, m)?)?;
-    m.add_function(wrap_pyfunction!(glam::test_runner, m)?)?;
+    m.add_function(wrap_pyfunction!(glam::glam_style_histogram, m)?)?;
 
     Ok(())
 }
