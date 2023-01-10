@@ -24,6 +24,7 @@ impl FromStr for Distribution {
             "timing_distribution" => Ok(Distribution::TimingDistribution),
             "memory_distribution" => Ok(Distribution::MemoryDistribution),
             "custom_distribution_exponential" => Ok(Distribution::CustomDistributionExponential),
+            "histogram-exponential" => Ok(Distribution::CustomDistributionExponential),
             "custom_distribution_linear" => Ok(Distribution::CustomDistributionLinear),
             _ => Err("valid distribution type not provided"),
         }
