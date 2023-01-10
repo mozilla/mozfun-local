@@ -245,19 +245,6 @@ pub fn glam_style_histogram(
     Ok(results)
 }
 
-//#[pyfunction]
-//pub fn test_runner(pydf: PyDataFrame) {
-//    let metadata = r#"{"probe": "wr_renderer_time", "histogram_type": "custom_distribution_exponential", "process": "parent", "probe_location": "payload.histograms.wr_renderer_time", "buckets_key": "min, max, n_buckets", "buckets_for_probe": [1, 1000, 50]}"#;
-
-//    let md = parse_metadata_json(metadata).unwrap();
-
-//    // let column = "wr_renderer_time";
-//    let results = glam_style_histogram(pydf, md);
-
-//    dbg!(results);
-//    //Ok(results)
-//}
-
 #[cfg(test)]
 mod tests {
     use super::*;
