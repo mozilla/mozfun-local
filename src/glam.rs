@@ -24,16 +24,15 @@ impl FromStr for Distribution {
             "timing_distribution" => Ok(Distribution::TimingDistribution),
             "memory_distribution" => Ok(Distribution::MemoryDistribution),
             "custom_distribution_exponential" => Ok(Distribution::CustomDistributionExponential),
-            "histogram-exponential" => Ok(Distribution::CustomDistributionExponential),
             "custom_distribution_linear" => Ok(Distribution::CustomDistributionLinear),
             _ => Err("valid distribution type not provided"),
         }
     }
 }
 
+/// Non-concurrent normalization, because GLAM aggregation is partitioned
+/// and the concurrency makes more sense on those partitions.
 fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
-    // non-concurrent normalization, because GLAM aggregation is partitioned
-    // and the concurrency makes more sense on those partitions.
     let total = hist.values().sum::<i64>() as f64;
 
     hist.iter()
@@ -41,8 +40,8 @@ fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
         .collect()
 }
 
+/// Generic version of map sum, cannot be exposed to python
 fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -> HashMap<T, U> {
-    // generic version of map sum, cannot be exposed to python
     let mut result_map = HashMap::new();
 
     for m in maps {
@@ -113,19 +112,57 @@ fn generate_exponential_buckets(
     out_array
 }
 
-fn count_users(hist: &mut HashMap<usize, f64>) -> usize {
-    // this is a neat trick; because all of the client histograms sum to
-    // one, you can just sum the values to get N_reporting
-    hist.values().sum::<f64>() as usize
+fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usize> {
+    let mut result = vec![0usize];
+
+    for i in 0..usize::min(10_000, max).min(n_buckets) {
+        let linear_range = (min * (n_buckets - 1 - i) + max * (i - 1)) / (n_buckets - 2);
+
+        result.push(linear_range);
+    }
+
+    result
 }
 
-fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting: usize) {
-    // Operates on a single histogram.
-    // The histogram is filled at this point, can take K from length (total buckets)
-    // -- Dirichlet distribution density for each bucket in a histogram.
-    //  -- Given {k1: p1,k2:p2} where p’s are proportions(and p1, p2 sum to 1)
-    //  -- return {k1: (P1+1/K) / (nreporting+1), k2:(P2+1/K) / (nreporting+1)}
+// Calculates the value at a given percentile
+// 0.0 <= Percentile: f64 <= 1.0
+fn glam_percentile(percentile: f64, hist: &HashMap<usize, f64>) -> f64 {
+    let total = hist.values().sum::<f64>().round();
 
+    let mut normalized: Vec<(usize, f64)> = hist
+        .iter()
+        .map(|(k, v)| (*k as usize, *v as f64 / total))
+        .collect();
+
+    normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    let mut acc = 0.0;
+    let mut index = 0;
+
+    for i in 0..normalized.len() {
+        acc += normalized[i].1;
+        index = i;
+
+        if acc >= percentile {
+            break;
+        }
+    }
+
+    *hist.get(&index).unwrap()
+}
+
+// fn count_users(hist: &HashMap<usize, f64>) -> usize {
+//     // this is a neat trick; because all of the client histograms sum to
+//     // one, you can just sum the values to get N_reporting
+//     hist.values().sum::<f64>().round() as usize
+// }
+
+/// Operates on a single histogram.
+/// The histogram is filled at this point, can take K from length (total buckets)
+/// -- Dirichlet distribution density for each bucket in a histogram.
+///  -- Given {k1: p1,k2:p2} where p’s are proportions(and p1, p2 sum to 1)
+///  -- return {k1: (P1+1/K) / (nreporting+1), k2:(P2+1/K) / (nreporting+1)}
+fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting: usize) {
     let k = hist.len() as f64;
     let n_reporting = n_reporting as f64;
 
@@ -139,10 +176,20 @@ fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
     });
 }
 
+/// Positional arguments are from the three int group that describes the
+/// input arguments for both glean and ffdesktop distributions
+/// \[int1, int2, int3] can represent either:
+/// Glean: \[log\_base, buckets\_per\_magnitude, max\_buckets]
+/// Legacy: \[min, max, n\_buckets]
+/// These are distinct sets, and the Glean set are predefined based on the type
+/// of histogram as defined in Glean
 fn calculate_dirichlet_distribution(
     histogram_vector: HashMap<usize, f64>,
     histogram_type: String,
-    n_buckets: usize,
+    n_reporting: usize,
+    positional_zero: usize,
+    positional_one: usize,
+    positional_two: usize,
 ) -> Result<HashMap<usize, f64>, String> {
     // 1. aggregate client level histograms <- per client level
     // client_id || [bucket: sum, bucket: sum...]
@@ -163,25 +210,28 @@ fn calculate_dirichlet_distribution(
     // 6.generate the array of all bucket values we need to fill in and
     // add the dirichlet transfromed value (5) to the appropriate bucket
     //
-
     let mut hist = histogram_vector; // when we take the dictionary in from Python,
                                      // we probably cannot take it as a reference
 
     // assuming at this point I have aggregated, normalized histograms
-    let n_reporting = count_users(&mut hist);
-    let range_max = hist.keys().max().unwrap().clone(); // this histogram is about to get mutated,
-                                                        // not sure this clone is necessary but it
-                                                        // feels like it might be
-    let _range_min = hist.keys().min().unwrap().clone(); // handle errors later
     let histogram_type = Distribution::from_str(histogram_type.as_str());
+
+    let range_max = match histogram_type {
+        // only calculate if glean histogram
+        Ok(Distribution::TimingDistribution) => hist.keys().max().unwrap().clone(),
+        Ok(Distribution::MemoryDistribution) => hist.keys().max().unwrap().clone(),
+        _ => 0,
+    };
 
     let buckets = match histogram_type {
         Ok(Distribution::TimingDistribution) => generate_functional_buckets(2, 8, range_max),
         Ok(Distribution::MemoryDistribution) => generate_functional_buckets(2, 16, range_max),
         Ok(Distribution::CustomDistributionExponential) => {
-            generate_exponential_buckets(0, 1_000, n_buckets)
+            generate_exponential_buckets(positional_zero, positional_one, positional_two)
         }
-        Ok(Distribution::CustomDistributionLinear) => todo!(),
+        Ok(Distribution::CustomDistributionLinear) => {
+            generate_linear_buckets(positional_zero, positional_one, positional_two)
+        }
         _ => return Err("Invalid Histogram Type".to_string()),
     };
 
@@ -194,11 +244,11 @@ fn calculate_dirichlet_distribution(
 #[pyfunction]
 pub fn glam_style_histogram(
     pydf: PyDataFrame,
-    metadata: String,
+    histogram_metadata: String,
 ) -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
-    let metadata = parse_metadata_json(&metadata).unwrap();
+    let histogram_metadata = parse_metadata_json(&histogram_metadata).unwrap();
 
-    let probe = metadata.probe.as_str();
+    let probe = histogram_metadata.probe.as_str();
     let data: DataFrame = pydf.into();
 
     let partitioned_data = data.partition_by(["build_id"]).unwrap();
@@ -232,11 +282,16 @@ pub fn glam_style_histogram(
         }
 
         let build_histograms = map_sum(client_levels);
+        // this is necessary to stop weird floating point behavior
+        let n_reporting = build_histograms.clone().values().sum::<f64>().round() as usize;
 
         let dirichlet_transformed_hists = calculate_dirichlet_distribution(
             build_histograms,
-            metadata.histogram_type.clone(),
-            metadata.buckets_for_probe[2],
+            histogram_metadata.histogram_type.clone(),
+            n_reporting,
+            histogram_metadata.buckets_for_probe[0],
+            histogram_metadata.buckets_for_probe[1],
+            histogram_metadata.buckets_for_probe[2],
         )
         .unwrap();
 
