@@ -126,30 +126,30 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
 
 // Calculates the value at a given percentile
 // 0.0 <= Percentile: f64 <= 1.0
-fn glam_percentile(percentile: f64, hist: &HashMap<usize, f64>) -> f64 {
-    let total = hist.values().sum::<f64>().round();
+// fn cum_sum_sorted(percentile: f64, hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
+//     let total = hist.values().sum::<f64>().round();
 
-    let mut normalized: Vec<(usize, f64)> = hist
-        .iter()
-        .map(|(k, v)| (*k as usize, *v as f64 / total))
-        .collect();
+//     let mut normalized: Vec<(usize, f64)> = hist
+//         .iter()
+//         .map(|(k, v)| (*k as usize, *v as f64 / total))
+//         .collect();
 
-    normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+//     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-    let mut acc = 0.0;
-    let mut index = 0;
+//     let mut acc = 0.0;
+//     let mut index = 0;
 
-    for i in 0..normalized.len() {
-        acc += normalized[i].1;
-        index = i;
+//     for i in 0..normalized.len() {
+//         acc += normalized[i].1;
+//         index = i;
 
-        if acc >= percentile {
-            break;
-        }
-    }
+//         if acc >= percentile {
+//             break;
+//         }
+//     }
 
-    *hist.get(&index).unwrap()
-}
+//     *hist.get(&index).unwrap()
+// }
 
 // fn count_users(hist: &HashMap<usize, f64>) -> usize {
 //     // this is a neat trick; because all of the client histograms sum to
@@ -160,11 +160,10 @@ fn glam_percentile(percentile: f64, hist: &HashMap<usize, f64>) -> f64 {
 /// Operates on a single histogram.
 /// The histogram is filled at this point, can take K from length (total buckets)
 /// -- Dirichlet distribution density for each bucket in a histogram.
-///  -- Given {k1: p1,k2:p2} where p’s are proportions(and p1, p2 sum to 1)
-///  -- return {k1: (P1+1/K) / (nreporting+1), k2:(P2+1/K) / (nreporting+1)}
-fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting: usize) {
+/// -- Given {k1: p1,k2:p2} where p’s are proportions(and p1, p2 sum to 1)
+/// -- return {k1: (P1+1/K) / (nreporting+1), k2:(P2+1/K) / (nreporting+1)}
+fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting: f64) {
     let k = hist.len() as f64;
-    let n_reporting = n_reporting as f64;
 
     hist.iter_mut()
         .for_each(|(_, v)| *v = (*v + 1.0f64 / k) / n_reporting);
@@ -186,7 +185,7 @@ fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
 fn calculate_dirichlet_distribution(
     histogram_vector: HashMap<usize, f64>,
     histogram_type: String,
-    n_reporting: usize,
+    n_reporting: f64,
     positional_zero: usize,
     positional_one: usize,
     positional_two: usize,
@@ -283,7 +282,7 @@ pub fn glam_style_histogram(
 
         let build_histograms = map_sum(client_levels);
         // this is necessary to stop weird floating point behavior
-        let n_reporting = build_histograms.clone().values().sum::<f64>().round() as usize;
+        let n_reporting = build_histograms.clone().values().sum::<f64>().round();
 
         let dirichlet_transformed_hists = calculate_dirichlet_distribution(
             build_histograms,
