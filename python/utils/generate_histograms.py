@@ -19,6 +19,7 @@ PROBE_INFO_SERVICE = (
 
 p = argparse.ArgumentParser()
 p.add_argument(
+    "-t",
     "--agg-type",
     type=str,
     help="One of histograms/keyed_histograms",
@@ -63,13 +64,13 @@ def _get_keyed_histogram_sql(probes_and_buckets):
 
             agg_string = (
                 f"('{probe}', "
-                f"'histogram-{details['type']}', "
+                f"'custom_distribution_{details['type']}', "
                 f"'{process}', "
                 f"{probe_location}, "
                 f"({buckets_for_probe}))"
             )
 
-            hist_type = f"histogram-{details['type']}"
+            hist_type = f"custom_distribution_{details['type']}"
             agg_dict = {
                 "probe": probe,
                 "histogram_type": hist_type,
@@ -123,13 +124,13 @@ def get_histogram_probes_sql_strings(probes_and_buckets, histogram_type):
 
             agg_string = (
                 f"('{probe}', "
-                f"'histogram-{details['type']}', "
+                f"'custom_distribution_{details['type']}', "
                 f"'{process}', "
                 f"{probe_location}, "
                 f"({buckets_for_probe}))"
             )
 
-            hist_type = f"histogram-{details['type']}"
+            hist_type = f"custom_distribution_{details['type']}"
             agg_dict = {
                 "probe": probe,
                 "histogram_type": hist_type,
