@@ -20,5 +20,8 @@ RUN cd mozfun-local && \
     apt-get install -y curl build-essential && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     . "$HOME/.cargo/env" && \
-    maturin build
-    
+    maturin build && \
+    wheel=target/wheels/* && \
+    pip install $wheel
+
+SHELL ["/bin/bash", "-c"]
