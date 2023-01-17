@@ -124,32 +124,20 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
     result
 }
 
-// Calculates the value at a given percentile
-// 0.0 <= Percentile: f64 <= 1.0
-// fn cum_sum_sorted(percentile: f64, hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
-//     let total = hist.values().sum::<f64>().round();
+// Converts histogram into Vec<k, v> sorted by k
+// Necessary to make calculating percentile less painful
+fn hist_to_normed_sorted(hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
+    let total = hist.values().sum::<f64>().round();
 
-//     let mut normalized: Vec<(usize, f64)> = hist
-//         .iter()
-//         .map(|(k, v)| (*k as usize, *v as f64 / total))
-//         .collect();
+    let mut normalized: Vec<(usize, f64)> = hist
+        .iter()
+        .map(|(k, v)| (*k as usize, *v / total))
+        .collect();
 
-//     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-//     let mut acc = 0.0;
-//     let mut index = 0;
-
-//     for i in 0..normalized.len() {
-//         acc += normalized[i].1;
-//         index = i;
-
-//         if acc >= percentile {
-//             break;
-//         }
-//     }
-
-//     *hist.get(&index).unwrap()
-// }
+    normalized
+}
 
 // fn count_users(hist: &HashMap<usize, f64>) -> usize {
 //     // this is a neat trick; because all of the client histograms sum to
@@ -244,7 +232,7 @@ fn calculate_dirichlet_distribution(
 pub fn glam_style_histogram(
     pydf: PyDataFrame,
     histogram_metadata: String,
-) -> PyResult<Vec<(String, HashMap<usize, f64>)>> {
+) -> PyResult<Vec<(String, Vec<(usize, f64)>)>> {
     let histogram_metadata = parse_metadata_json(&histogram_metadata).unwrap();
 
     let probe = histogram_metadata.probe.as_str();
@@ -294,7 +282,9 @@ pub fn glam_style_histogram(
         )
         .unwrap();
 
-        results.push((build_id, dirichlet_transformed_hists));
+        let result = hist_to_normed_sorted(&dirichlet_transformed_hists);
+
+        results.push((build_id, result));
     }
     Ok(results)
 }
