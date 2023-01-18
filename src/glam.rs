@@ -5,7 +5,6 @@ use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
 use std::hash::Hash;
 use std::ops::AddAssign;
-use std::sync::{Arc, Mutex};
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -242,59 +241,58 @@ pub fn glam_style_histogram(
 
     let partitioned_data = data.partition_by(["build_id"]).unwrap();
 
-    // let mut results = Vec::new();
-    let arced_results = Arc::new(Mutex::new(Vec::new()));
+    let mut results = Vec::new();
 
-    partitioned_data.par_iter().for_each(|df| {
-        let build_id = df
-            .column("build_id")
-            .unwrap()
-            .str_value(0)
-            .unwrap()
-            .to_string();
-        let client_level_dfs = df.partition_by(["client_id"]).unwrap();
-        let mut client_levels = Vec::new();
-
-        for d in client_level_dfs {
-            let metric_column = d.select_series(&[probe]).unwrap();
-
-            let histograms_raw = metric_column[0]
-                .utf8()
+    // utilizes collect_into_vec -> results
+    partitioned_data
+        .par_iter()
+        .map(|df| {
+            let build_id = df
+                .column("build_id")
                 .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>();
-            let histograms_parsed = parse_main_histograms(histograms_raw);
+                .str_value(0)
+                .unwrap()
+                .to_string();
+            let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+            let mut client_levels = Vec::new();
 
-            let client_aggregatted = map_sum(histograms_parsed);
-            let client_normed = normalize_histogram_glam(client_aggregatted);
+            for d in client_level_dfs {
+                let metric_column = d.select_series(&[probe]).unwrap();
 
-            client_levels.push(client_normed);
-        }
+                let histograms_raw = metric_column[0]
+                    .utf8()
+                    .unwrap()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let histograms_parsed = parse_main_histograms(histograms_raw);
 
-        let build_histograms = map_sum(client_levels);
-        // this is necessary to stop weird floating point behavior
-        let n_reporting = build_histograms.clone().values().sum::<f64>().round();
+                let client_aggregatted = map_sum(histograms_parsed);
+                let client_normed = normalize_histogram_glam(client_aggregatted);
 
-        let dirichlet_transformed_hists = calculate_dirichlet_distribution(
-            build_histograms,
-            histogram_metadata.histogram_type.clone(),
-            n_reporting,
-            histogram_metadata.buckets_for_probe[0],
-            histogram_metadata.buckets_for_probe[1],
-            histogram_metadata.buckets_for_probe[2],
-        )
-        .unwrap();
+                client_levels.push(client_normed);
+            }
 
-        let result = hist_to_normed_sorted(&dirichlet_transformed_hists);
+            let build_histograms = map_sum(client_levels);
+            // this is necessary to stop weird floating point behavior
+            let n_reporting = build_histograms.clone().values().sum::<f64>().round();
 
-        //results.push((build_id, result));
-        arced_results.lock().unwrap().push((build_id, result));
-    });
+            let dirichlet_transformed_hists = calculate_dirichlet_distribution(
+                build_histograms,
+                histogram_metadata.histogram_type.clone(),
+                n_reporting,
+                histogram_metadata.buckets_for_probe[0],
+                histogram_metadata.buckets_for_probe[1],
+                histogram_metadata.buckets_for_probe[2],
+            )
+            .unwrap();
 
-    let results = Arc::try_unwrap(arced_results)
-        .unwrap()
-        .into_inner()
-        .unwrap();
+            (
+                build_id,
+                hist_to_normed_sorted(&dirichlet_transformed_hists),
+            )
+        })
+        .collect_into_vec(&mut results);
+
     Ok(results)
 }
 
