@@ -2,8 +2,10 @@ use crate::hist::{parse_main_histograms, parse_metadata_json};
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
+use rayon::prelude::*;
 use std::hash::Hash;
 use std::ops::AddAssign;
+use std::sync::{Arc, Mutex};
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -240,9 +242,10 @@ pub fn glam_style_histogram(
 
     let partitioned_data = data.partition_by(["build_id"]).unwrap();
 
-    let mut results = Vec::new();
+    // let mut results = Vec::new();
+    let arced_results = Arc::new(Mutex::new(Vec::new()));
 
-    for df in partitioned_data {
+    partitioned_data.par_iter().for_each(|df| {
         let build_id = df
             .column("build_id")
             .unwrap()
@@ -284,8 +287,14 @@ pub fn glam_style_histogram(
 
         let result = hist_to_normed_sorted(&dirichlet_transformed_hists);
 
-        results.push((build_id, result));
-    }
+        //results.push((build_id, result));
+        arced_results.lock().unwrap().push((build_id, result));
+    });
+
+    let results = Arc::try_unwrap(arced_results)
+        .unwrap()
+        .into_inner()
+        .unwrap();
     Ok(results)
 }
 
