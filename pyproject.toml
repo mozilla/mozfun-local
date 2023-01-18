@@ -9,7 +9,9 @@ dependencies = [
     "requests",
     'importlib-metadata; python_version<"3.8"',
     'bitstring',
-    'numpy'
+    'numpy',
+    'google-cloud-bigquery',
+    'polars'
 ]
 
 [tool.maturin]
