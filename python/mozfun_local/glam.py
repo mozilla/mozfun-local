@@ -98,14 +98,14 @@ def _lists_from_tuples(tuples):
 
 def _find_cutoffs(buckets, cdf, percentiles):
     assert len(percentiles) > 0, "Must provide at least one percentile to calculate"
-    percentiles = sorted(percentiles) # we only need to go through once
-                                      # if values are sorted
-    
+    percentiles = sorted(percentiles)  # we only need to go through once
+    # if values are sorted
+
     results = {}
     max_iter = len(cdf)
     i = 0
     for p in percentiles:
-        while i < max_iter and cdf[i] < p: 
+        while i < max_iter and cdf[i] < p:
             i += 1
         if i < max_iter:
             results[p] = buckets[i]
@@ -115,7 +115,7 @@ def _find_cutoffs(buckets, cdf, percentiles):
     return results
 
 
-def calculate_percentiles(distribution: list, percentiles: list) -> dict:
+def calculate_percentiles(distribution, percentiles) -> dict:
     """Given a list of percentiles and a distribution, find the buckets that
     represent each percentile. Internal functions are numba jitted python.
 
@@ -125,8 +125,9 @@ def calculate_percentiles(distribution: list, percentiles: list) -> dict:
     percentiles -- list of floating point values [0.0, 1.0] of the percentiles
                    you wish to calculate
     """
+    # perf improvement as we iterate later and numpy has known types
     if type(percentiles) != np.ndarray:
-        percentiles = np.array(percentiles)
+        percentiles = np.array(percentiles)  # type: np.ndarray
 
     k, v = _lists_from_tuples(distribution)
 
