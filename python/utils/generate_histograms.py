@@ -7,7 +7,6 @@ import sys
 from time import sleep
 import urllib.request
 
-from bigquery_etl.util import probe_filters
 from google.cloud import bigquery
 
 sys.path.append(str(Path(__file__).parent.parent.parent.resolve()))
@@ -43,6 +42,15 @@ p.add_argument(
     help="Processes to include in the output.  Defaults to all processes.",
 )
 
+
+def _get_etl_excluded_probes_quickfix(product):
+    """Provide a static list of probes that must be excluded from aggregation."""
+    # See https://github.com/mozilla/glam/issues/1865
+    forbidden_probes_by_product = {
+        "fenix": {},
+        "desktop": {"sqlite_store_open", "sqlite_store_query"},
+    }
+    return forbidden_probes_by_product[product]
 
 def _get_keyed_histogram_sql(probes_and_buckets):
     probes = probes_and_buckets["probes"]
@@ -206,7 +214,7 @@ def get_histogram_probes_and_buckets(histogram_type, processes_to_output):
 
     with urllib.request.urlopen(PROBE_INFO_SERVICE) as url:
         data = json.loads(url.read())
-        excluded_probes = probe_filters.get_etl_excluded_probes_quickfix("desktop")
+        excluded_probes = _get_etl_excluded_probes_quickfix("desktop")
         histogram_probes = {
             x.replace("histogram/", "").replace(".", "_").lower()
             for x in data.keys()

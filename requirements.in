@@ -1,4 +1,4 @@
-maturin
-numba
-polars
-pyarrow
+maturin=0.14.8
+numba=0.56.4
+polars=0.15.15
+pyarrow=10.0.1
