@@ -3,8 +3,6 @@ from pathlib import Path
 
 from google.cloud import bigquery
 from mozfun_local.mozfun_local_rust import glam_style_histogram as _glam_style_histogram
-from numba import njit
-from numba.typed import List
 import numpy as np
 import polars as pl
 
@@ -90,30 +88,29 @@ def get_metadata(probe: str) -> str:
     return _metadata.metadata[probe]
 
 
-@njit()
 def _lists_from_tuples(tuples):
     """Makes two separate lists from a list of tuples."""
-    k = []
-    v = []
-    for item in tuples:
-        k.append(item[0])
-        v.append(item[1])
+    # this is hideous but empirically faster than zip(*l) and append()
+    k, v = [k for k, _ in tuples], [v for _, v in tuples]
 
     return k, v
 
 
-@njit()
 def _find_cutoffs(buckets, cdf, percentiles):
     assert len(percentiles) > 0, "Must provide at least one percentile to calculate"
+    percentiles = sorted(percentiles) # we only need to go through once
+                                      # if values are sorted
+    
     results = {}
+    max_iter = len(cdf)
+    i = 0
     for p in percentiles:
-        idx = 0
-        for c in cdf:
-            if c < p:
-                idx += 1                
-            else:
-                results[p] = buckets[idx]
-                break
+        while i < max_iter and cdf[i] < p: 
+            i += 1
+        if i < max_iter:
+            results[p] = buckets[i]
+        else:
+            results[p] = buckets[-1]
 
     return results
 
@@ -128,22 +125,13 @@ def calculate_percentiles(distribution: list, percentiles: list) -> dict:
     percentiles -- list of floating point values [0.0, 1.0] of the percentiles
                    you wish to calculate
     """
+    if type(percentiles) != np.ndarray:
+        percentiles = np.array(percentiles)
 
-    typed_distribution = List()  # sadly, this is idiomatic numba
-    [typed_distribution.append(pair) for pair in distribution]
+    k, v = _lists_from_tuples(distribution)
 
-    k, v = _lists_from_tuples(typed_distribution)
+    cumulative_distribution = np.cumsum(v)
 
-    typed_k = List()
-    typed_v = List()
-    [typed_k.append(x) for x in k]
-    [typed_v.append(x) for x in v]
-
-    cumulative_distribution = np.cumsum(typed_v)
-
-    typed_percentiles = List()
-    [typed_percentiles.append(p) for p in percentiles]
-
-    cutoffs = _find_cutoffs(typed_k, cumulative_distribution, typed_percentiles)
+    cutoffs = _find_cutoffs(k, cumulative_distribution, percentiles)
 
     return cutoffs
