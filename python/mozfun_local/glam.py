@@ -36,7 +36,7 @@ _metadata = metadata()
 
 
 def glam_style_histogram(
-    probe: str,
+    probes: list,
     keyed: bool,
     date: str,
     limit: int = None,
@@ -55,30 +55,43 @@ def glam_style_histogram(
     table -- full path to the table you wish to take probes from (default mozdata.telemetry.main_1pct)
     """
     _limit = f"LIMIT {limit}" if limit else ""
-    probe_location = (
-        f"payload.histograms.{probe}"
-        if not keyed
-        else f"payload.keyed_histograms.{probe}"
-    )
+
+    probe_locations = [
+        (
+            f"payload.histograms.{probe}"
+            if not keyed
+            else f"payload.keyed_histograms.{probe}"
+        )
+        for probe in probes
+    ]
+
+    probe_string = (", \n    ").join(probe_locations)
+
     sql_query = f"""SELECT 
-       client_id,
-       application.build_id,
-       {probe_location},
+    client_id,
+    application.build_id,
+    {probe_string},
 FROM {table}
 WHERE date(submission_timestamp) = '{date}'
-  AND date(submission_timestamp) > date(2022, 12, 20)
-  AND {probe_location} IS NOT NULL
-  {_limit}"""
-
-    metadata = get_metadata(probe)
+AND date(submission_timestamp) > date(2022, 12, 20)
+AND sample_id < 10
+{_limit}"""
 
     project = table.split(".")[0]
     bq_client = bigquery.Client(project=project)
 
     dataset = bq_client.query(sql_query).result()
-    df = pl.from_arrow(dataset.to_arrow())
+    data = pl.from_arrow(dataset.to_arrow())  # type: pl.DataFrame
 
-    results = _glam_style_histogram(df, metadata)
+    results = []
+    for probe in probes:
+        df = data.select(["client_id", "build_id", probe])
+        df = df.filter(pl.col(probe).is_not_null())
+
+        metadata = get_metadata(probe)
+
+        result = _glam_style_histogram(df, metadata)
+        results.append((probe, result))
 
     return results
 
