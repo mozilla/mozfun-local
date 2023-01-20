@@ -157,7 +157,7 @@ fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting:
         .for_each(|(_, v)| *v = (*v + 1.0f64 / k) / n_reporting);
 }
 
-fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
+fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &[usize]) {
     buckets.iter().for_each(|x| {
         hist.entry(*x).or_insert(0f64);
     });
