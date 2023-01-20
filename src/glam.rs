@@ -205,8 +205,9 @@ fn calculate_dirichlet_distribution(
 
     let range_max = match histogram_type {
         // only calculate if glean histogram
-        Ok(Distribution::TimingDistribution) => hist.keys().max().unwrap().clone(),
-        Ok(Distribution::MemoryDistribution) => hist.keys().max().unwrap().clone(),
+        Ok(Distribution::TimingDistribution | Distribution::MemoryDistribution) => {
+            *hist.keys().max().unwrap()
+        }
         _ => 0,
     };
 
