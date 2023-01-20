@@ -131,7 +131,7 @@ fn hist_to_normed_sorted(hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
 
     let mut normalized: Vec<(usize, f64)> = hist
         .iter()
-        .map(|(k, v)| (*k, *v / total))
+        .map(|(k, v)| (*k as usize, *v / total))
         .collect();
 
     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());

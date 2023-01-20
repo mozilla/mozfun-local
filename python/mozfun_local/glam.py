@@ -40,6 +40,7 @@ def glam_style_histogram(
     keyed: bool,
     date: str,
     limit: int = None,
+    sample_rate: float = None,
     table: str = "mozdata.telemetry.main_1pct",
 ) -> list:
     """Calculate the GLAM style histogram transformation to a given histogram
@@ -52,10 +53,18 @@ def glam_style_histogram(
     keyed -- bool if the histogram is keyed
     date -- string of date you wish to calculate the transformation for (date is a partition key)
     limit -- int of the number of rows from the ping to take (default None/no limit)
+    sample_rate -- float what percent of samples to take, starting at zero, only divisible by 10, default None
     table -- full path to the table you wish to take probes from (default mozdata.telemetry.main_1pct)
     """
+    scaled_sample = sample_rate * 100 if sample_rate else 10
+    if sample_rate is not None:
+        assert (
+            (scaled_sample) % 10 == 0 and sample_rate > 0.0 and sample_rate <= 1.0
+        ), "sample rate must be between zero and one, and divsible by 10 in whole number representation"
+
     _limit = f"LIMIT {limit}" if limit else ""
 
+    results = []
     probe_locations = [
         (
             f"payload.histograms.{probe}"
@@ -67,31 +76,37 @@ def glam_style_histogram(
 
     probe_string = (", \n    ").join(probe_locations)
 
-    sql_query = f"""SELECT 
+    # 0 <= sample_id < 100
+    for f in np.arange(10, scaled_sample + 10, 10):
+        print(f)
+        if sample_rate:
+            sample_id_string = f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
+        else:
+            sample_id_string = ""
+        sql_query = f"""SELECT 
     client_id,
     application.build_id,
     {probe_string},
 FROM {table}
 WHERE date(submission_timestamp) = '{date}'
 AND date(submission_timestamp) > date(2022, 12, 20)
-AND sample_id < 10
+{sample_id_string}
 {_limit}"""
 
-    project = table.split(".")[0]
-    bq_client = bigquery.Client(project=project)
+        project = table.split(".")[0]
+        bq_client = bigquery.Client(project=project)
 
-    dataset = bq_client.query(sql_query).result()
-    data = pl.from_arrow(dataset.to_arrow())  # type: pl.DataFrame
+        dataset = bq_client.query(sql_query).result()
+        data = pl.from_arrow(dataset.to_arrow())  # type: pl.DataFrame
 
-    results = []
-    for probe in probes:
-        df = data.select(["client_id", "build_id", probe])
-        df = df.filter(pl.col(probe).is_not_null())
+        for probe in probes:
+            df = data.select(["client_id", "build_id", probe])
+            df = df.filter(pl.col(probe).is_not_null())
 
-        metadata = get_metadata(probe)
+            metadata = get_metadata(probe)
 
-        result = _glam_style_histogram(df, metadata)
-        results.append((probe, result))
+            result = _glam_style_histogram(df, metadata)
+            results.append((probe, f, f-10, result))
 
     return results
 
