@@ -80,7 +80,9 @@ def glam_style_histogram(
     for f in np.arange(10, scaled_batch_size + 10, 10):
         print(f)
         if batch_size:
-            sample_id_string = f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
+            sample_id_string = (
+                f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
+            )
         else:
             sample_id_string = ""
         sql_query = f"""SELECT 
@@ -106,7 +108,7 @@ AND date(submission_timestamp) > date(2022, 12, 20)
             metadata = get_metadata(probe)
 
             result = _glam_style_histogram(df, metadata)
-            results.append((probe, f, f-10, result))
+            results.append((probe, f, f - 10, result))
 
     return results
 
