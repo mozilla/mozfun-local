@@ -129,10 +129,7 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
 fn hist_to_normed_sorted(hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
     let total = hist.values().sum::<f64>().round();
 
-    let mut normalized: Vec<(usize, f64)> = hist
-        .iter()
-        .map(|(k, v)| (*k as usize, *v / total))
-        .collect();
+    let mut normalized: Vec<(usize, f64)> = hist.iter().map(|(k, v)| (*k, *v / total)).collect();
 
     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
