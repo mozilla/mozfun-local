@@ -131,7 +131,7 @@ fn hist_to_normed_sorted(hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
 
     let mut normalized: Vec<(usize, f64)> = hist
         .iter()
-        .map(|(k, v)| (*k as usize, *v / total))
+        .map(|(k, v)| (*k, *v / total))
         .collect();
 
     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -157,7 +157,7 @@ fn transform_to_dirichlet_estimator(hist: &mut HashMap<usize, f64>, n_reporting:
         .for_each(|(_, v)| *v = (*v + 1.0f64 / k) / n_reporting);
 }
 
-fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &Vec<usize>) {
+fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &[usize]) {
     buckets.iter().for_each(|x| {
         hist.entry(*x).or_insert(0f64);
     });
@@ -205,8 +205,9 @@ fn calculate_dirichlet_distribution(
 
     let range_max = match histogram_type {
         // only calculate if glean histogram
-        Ok(Distribution::TimingDistribution) => hist.keys().max().unwrap().clone(),
-        Ok(Distribution::MemoryDistribution) => hist.keys().max().unwrap().clone(),
+        Ok(Distribution::TimingDistribution | Distribution::MemoryDistribution) => {
+            *hist.keys().max().unwrap()
+        }
         _ => 0,
     };
 
@@ -253,7 +254,7 @@ pub fn glam_style_histogram(
         let mut client_levels = Vec::new();
 
         for d in client_level_dfs {
-            let metric_column = d.select_series(&[probe]).unwrap();
+            let metric_column = d.select_series([probe]).unwrap();
 
             let histograms_raw = metric_column[0]
                 .utf8()
