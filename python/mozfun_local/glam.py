@@ -102,11 +102,13 @@ AND date(submission_timestamp) > date(2022, 12, 20)
         print(f"starting query at {datetime.now()}")
         dataset = bq_client.query(sql_query).result()
         print(f"got data from bq at {datetime.now()}")
-        data = pl.from_arrow(dataset.to_arrow())  # type: pl.DataFrame
+        data = pl.from_arrow(dataset.to_arrow(), rechunk=False)  # type: pl.DataFrame
+        print(f"data moved to arrow and loaded in polars at {datetime.now()}")
 
         for probe in probes:
             df = data.select(["client_id", "build_id", probe])
             df = df.filter(pl.col(probe).is_not_null())
+            print(f"nulls filtered at {datetime.now()}")
 
             metadata = get_metadata(probe)
             print(f"sending {probe} to Rust at {datetime.now()}")
