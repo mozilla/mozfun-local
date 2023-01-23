@@ -40,7 +40,7 @@ def glam_style_histogram(
     keyed: bool,
     date: str,
     limit: int = None,
-    batch_size: float = None,
+    sample_rate: float = None,
     table: str = "mozdata.telemetry.main_1pct",
 ) -> list:
     """Calculate the GLAM style histogram transformation to a given histogram
@@ -53,13 +53,13 @@ def glam_style_histogram(
     keyed -- bool if the histogram is keyed
     date -- string of date you wish to calculate the transformation for (date is a partition key)
     limit -- int of the number of rows from the ping to take (default None/no limit)
-    batch_size -- float what percent of samples to take per batch, starting at zero, only divisible by 10, default None
+    sample_rate -- float what percent of samples to take per histogram, starting at zero, only divisible by 10, default None
     table -- full path to the table you wish to take probes from (default mozdata.telemetry.main_1pct)
     """
-    scaled_batch_size = batch_size * 100 if batch_size else 10
-    if batch_size is not None:
+    scaled_sample_rate = sample_rate * 100 if sample_rate else 10
+    if sample_rate is not None:
         assert (
-            (scaled_batch_size) % 10 == 0 and batch_size > 0.0 and batch_size <= 1.0
+            (scaled_sample_rate) % 10 == 0 and sample_rate > 0.0 and sample_rate <= 1.0
         ), "sample rate must be between zero and one, and divsible by 10 in whole number representation"
 
     _limit = f"LIMIT {limit}" if limit else ""
@@ -77,9 +77,9 @@ def glam_style_histogram(
     probe_string = (", \n    ").join(probe_locations)
 
     # 0 <= sample_id < 100
-    for f in np.arange(10, scaled_batch_size + 10, 10):
+    for f in np.arange(10, scaled_sample_rate + 10, 10):
         print(f)
-        if batch_size:
+        if sample_rate:
             sample_id_string = (
                 f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
             )
