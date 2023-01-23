@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import datetime
 
 from google.cloud import bigquery
 from mozfun_local.mozfun_local_rust import glam_style_histogram as _glam_style_histogram
@@ -73,6 +74,7 @@ def glam_style_histogram(
         )
         for probe in probes
     ]
+    print(f"got metadata for probes at {datetime.now()}")
 
     probe_string = (", \n    ").join(probe_locations)
 
@@ -97,7 +99,9 @@ AND date(submission_timestamp) > date(2022, 12, 20)
         project = table.split(".")[0]
         bq_client = bigquery.Client(project=project)
 
+        print(f"starting query at {datetime.now()}")
         dataset = bq_client.query(sql_query).result()
+        print(f"got data from bq at {datetime.now()}")
         data = pl.from_arrow(dataset.to_arrow())  # type: pl.DataFrame
 
         for probe in probes:
@@ -105,9 +109,10 @@ AND date(submission_timestamp) > date(2022, 12, 20)
             df = df.filter(pl.col(probe).is_not_null())
 
             metadata = get_metadata(probe)
-
+            print(f"sending {probe} to Rust at {datetime.now()}")
             result = _glam_style_histogram(df, metadata)
             results.append((probe, f, f - 10, result))
+            print(f"finished through sample_id {f} at {datetime.now()}")
 
     return results
 
