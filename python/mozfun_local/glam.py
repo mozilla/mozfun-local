@@ -53,14 +53,14 @@ def glam_style_histogram(
     keyed -- bool if the histogram is keyed
     date -- string of date you wish to calculate the transformation for (date is a partition key)
     limit -- int of the number of rows from the ping to take (default None/no limit)
-    sample_rate -- float what percent of samples to take per histogram, starting at zero, only divisible by 10, default None
+    sample_rate -- float what percent of samples to take per histogram, starting at zero, only divisible by 20, default None
     table -- full path to the table you wish to take probes from (default mozdata.telemetry.main_1pct)
     """
-    scaled_sample_rate = sample_rate * 100 if sample_rate else 10
+    scaled_sample_rate = sample_rate * 100 if sample_rate else 20
     if sample_rate is not None:
         assert (
-            (scaled_sample_rate) % 10 == 0 and sample_rate > 0.0 and sample_rate <= 1.0
-        ), "sample rate must be between zero and one, and divsible by 10 in whole number representation"
+            (scaled_sample_rate) % 20 == 0 and sample_rate > 0.0 and sample_rate <= 1.0
+        ), "sample rate must be between zero and one, and divsible by 20 in whole number representation"
 
     _limit = f"LIMIT {limit}" if limit else ""
 
@@ -77,7 +77,7 @@ def glam_style_histogram(
     probe_string = (", \n    ").join(probe_locations)
 
     # 0 <= sample_id < 100
-    for f in np.arange(10, scaled_sample_rate + 10, 10):
+    for f in np.arange(20, scaled_sample_rate + 10, 20):
         print(f)
         if sample_rate:
             sample_id_string = (
