@@ -78,7 +78,6 @@ def glam_style_histogram(
 
     # 0 <= sample_id < 100
     for f in np.arange(20, scaled_sample_rate + 10, 20):
-        print(f)
         if sample_rate:
             sample_id_string = (
                 f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
