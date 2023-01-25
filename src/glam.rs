@@ -2,6 +2,7 @@ use crate::hist::{parse_main_histograms, parse_metadata_json};
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
+use rayon::prelude::*;
 use std::hash::Hash;
 use std::ops::AddAssign;
 use std::{
@@ -248,23 +249,28 @@ pub fn glam_style_histogram(
             .unwrap()
             .to_string();
         let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+
         let mut client_levels = Vec::new();
 
-        for d in client_level_dfs {
-            let metric_column = d.select_series([probe]).unwrap();
+        client_level_dfs
+            .par_iter()
+            .map(|d| {
+                let metric_column = d.select_series([probe]).unwrap();
 
-            let histograms_raw = metric_column[0]
-                .utf8()
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>();
-            let histograms_parsed = parse_main_histograms(histograms_raw);
+                let histograms_raw = metric_column[0]
+                    .utf8()
+                    .unwrap()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let histograms_parsed = parse_main_histograms(histograms_raw);
 
-            let client_aggregatted = map_sum(histograms_parsed);
-            let client_normed = normalize_histogram_glam(client_aggregatted);
+                let client_aggregatted = map_sum(histograms_parsed);
+                let client_normed = normalize_histogram_glam(client_aggregatted);
 
-            client_levels.push(client_normed);
-        }
+                // client_levels.push(client_normed);
+                client_normed
+            })
+            .collect_into_vec(&mut client_levels);
 
         let build_histograms = map_sum(client_levels);
         // this is necessary to stop weird floating point behavior
