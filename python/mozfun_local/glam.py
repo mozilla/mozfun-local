@@ -1,6 +1,6 @@
+from datetime import datetime
 import os
 from pathlib import Path
-from datetime import datetime
 
 from google.cloud import bigquery
 from mozfun_local.mozfun_local_rust import glam_style_histogram as _glam_style_histogram
@@ -43,6 +43,7 @@ def glam_style_histogram(
     limit: int = None,
     sample_rate: float = None,
     table: str = "mozdata.telemetry.main_1pct",
+    step: float = 0.2,
 ) -> list:
     """Calculate the GLAM style histogram transformation to a given histogram
     metric. The result is a list of sorted key-value pairs of bucket and the
@@ -56,33 +57,49 @@ def glam_style_histogram(
     limit -- int of the number of rows from the ping to take (default None/no limit)
     sample_rate -- float what percent of samples to take per histogram, starting at zero, only divisible by 20, default None
     table -- full path to the table you wish to take probes from (default mozdata.telemetry.main_1pct)
+    step -- float to increment sample by
     """
-    scaled_sample_rate = sample_rate * 100 if sample_rate else 20
+    return [
+        _sql_runner(probe, keyed, date, limit, sample_rate, table, step)
+        for probe in probes
+    ]
+
+
+def _sql_runner(
+    probe: str,
+    keyed: bool,
+    date: str,
+    limit: int = None,
+    sample_rate: float = None,
+    table: str = "mozdata.telemetry.main_1pct",
+    step: float = 0.2,
+) -> list:
+
+    scaled_sample_rate = sample_rate * 100 if sample_rate else 10
+    step = int(step * 100)
     if sample_rate is not None:
         assert (
-            (scaled_sample_rate) % 20 == 0 and sample_rate > 0.0 and sample_rate <= 1.0
-        ), "sample rate must be between zero and one, and divsible by 20 in whole number representation"
+            sample_rate > 0.0 and sample_rate <= 1.0  # and step <= sample_rate
+        ), "sample rate must be between zero and one, step must be <= sample rate, and note that cleanly dividing choices will probably result in more predictable behavior, though you may ignore and allow numpy to do whatever it likes."
 
     _limit = f"LIMIT {limit}" if limit else ""
 
     results = []
-    probe_locations = [
-        (
-            f"payload.histograms.{probe}"
-            if not keyed
-            else f"payload.keyed_histograms.{probe}"
-        )
-        for probe in probes
-    ]
-    print(f"got metadata for probes at {datetime.now()}")
+    probe_string = (
+        f"payload.histograms.{probe}"
+        if not keyed
+        else f"payload.keyed_histograms.{probe}"
+    )
 
-    probe_string = (", \n    ").join(probe_locations)
+    print(f"got metadata for probe {probe} at {datetime.now()}")
+
+    # probe_string = (", \n    ").join(probe_locations)
 
     # 0 <= sample_id < 100
-    for f in np.arange(20, scaled_sample_rate + 10, 20):
+    for f in np.arange(step, scaled_sample_rate + step, step):
         if sample_rate:
             sample_id_string = (
-                f"AND sample_id >= {int(f - 10)} AND sample_id < {int(f)}"
+                f"AND sample_id >= {int(f - step)} AND sample_id < {int(f)}"
             )
         else:
             sample_id_string = ""
@@ -90,31 +107,39 @@ def glam_style_histogram(
     client_id,
     application.build_id,
     {probe_string},
-FROM {table}
+FROM {table} as t
 WHERE date(submission_timestamp) = '{date}'
 AND date(submission_timestamp) > date(2022, 12, 20)
+AND {probe_string} is not null
 {sample_id_string}
 {_limit}"""
 
         project = table.split(".")[0]
         bq_client = bigquery.Client(project=project)
 
+        job_config = bigquery.QueryJobConfig(
+            allow_large_results=True, priority=bigquery.QueryPriority.BATCH
+        )
+
         print(f"starting query at {datetime.now()}")
-        dataset = bq_client.query(sql_query).result()
+        dataset = bq_client.query(sql_query, job_config=job_config).result()
         print(f"got data from bq at {datetime.now()}")
-        data = pl.from_arrow(dataset.to_arrow(), rechunk=False)  # type: pl.DataFrame
+        data = pl.from_arrow(
+            dataset.to_arrow(
+                progress_bar_type="tqdm",
+            ).combine_chunks(),
+            rechunk=False,
+        )  # type: pl.DataFrame
         print(f"data moved to arrow and loaded in polars at {datetime.now()}")
 
-        for probe in probes:
-            df = data.select(["client_id", "build_id", probe])
-            df = df.filter(pl.col(probe).is_not_null())
-            print(f"nulls filtered at {datetime.now()}")
+        df = data.select(["client_id", "build_id", probe])
+        print(f"nulls filtered at {datetime.now()}")
 
-            metadata = get_metadata(probe)
-            print(f"sending {probe} to Rust at {datetime.now()}")
-            result = _glam_style_histogram(df, metadata)
-            results.append((probe, f, f - 10, result))
-            print(f"finished through sample_id {f} at {datetime.now()}")
+        metadata = get_metadata(probe)
+        print(f"sending {probe} to Rust at {datetime.now()}")
+        result = _glam_style_histogram(df, metadata)
+        results.append((probe, f, f - 10, result))
+        print(f"finished through sample_id {f} at {datetime.now()}")
 
     return results
 
