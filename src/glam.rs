@@ -2,6 +2,7 @@ use crate::hist::{parse_main_histograms, parse_metadata_json};
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
+use rayon::prelude::*;
 use std::hash::Hash;
 use std::ops::AddAssign;
 use std::{
@@ -44,11 +45,11 @@ fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
 fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -> HashMap<T, U> {
     let mut result_map = HashMap::new();
 
-    for m in maps {
+    maps.into_iter().for_each(|m| {
         for (k, v) in m {
             result_map.entry(k).and_modify(|y| *y += v).or_insert(v);
         }
-    }
+    });
 
     result_map
 }
@@ -120,7 +121,6 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
 
         result.push(linear_range);
     }
-
     result
 }
 
@@ -129,10 +129,7 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
 fn hist_to_normed_sorted(hist: &HashMap<usize, f64>) -> Vec<(usize, f64)> {
     let total = hist.values().sum::<f64>().round();
 
-    let mut normalized: Vec<(usize, f64)> = hist
-        .iter()
-        .map(|(k, v)| (*k, *v / total))
-        .collect();
+    let mut normalized: Vec<(usize, f64)> = hist.iter().map(|(k, v)| (*k, *v / total)).collect();
 
     normalized.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -171,7 +168,7 @@ fn fill_buckets(hist: &mut HashMap<usize, f64>, buckets: &[usize]) {
 /// These are distinct sets, and the Glean set are predefined based on the type
 /// of histogram as defined in Glean
 fn calculate_dirichlet_distribution(
-    histogram_vector: HashMap<usize, f64>,
+    histogram_vector: &HashMap<usize, f64>,
     histogram_type: String,
     n_reporting: f64,
     positional_zero: usize,
@@ -197,8 +194,8 @@ fn calculate_dirichlet_distribution(
     // 6.generate the array of all bucket values we need to fill in and
     // add the dirichlet transfromed value (5) to the appropriate bucket
     //
-    let mut hist = histogram_vector; // when we take the dictionary in from Python,
-                                     // we probably cannot take it as a reference
+    let mut hist = histogram_vector.to_owned(); // when we take the dictionary in from Python,
+                                                // we probably cannot take it as a reference
 
     // assuming at this point I have aggregated, normalized histograms
     let histogram_type = Distribution::from_str(histogram_type.as_str());
@@ -239,54 +236,67 @@ pub fn glam_style_histogram(
     let probe = histogram_metadata.probe.as_str();
     let data: DataFrame = pydf.into();
 
-    let partitioned_data = data.partition_by(["build_id"]).unwrap();
+    let partitioned_data = data.partition_by(["build_id"]).unwrap().to_owned();
+
+    let builds: Vec<(String, HashMap<usize, f64>)> = partitioned_data
+        .iter()
+        .map(|df| {
+            let build_id = df
+                .column("build_id")
+                .unwrap()
+                .str_value(0)
+                .unwrap()
+                .to_string();
+            let client_level_dfs = df.partition_by(["client_id"]).unwrap();
+
+            let mut client_levels = Vec::new();
+            client_level_dfs
+                .par_iter()
+                .map(|d| {
+                    let metric_column = d.select_series([probe]).unwrap();
+
+                    let histograms_raw = metric_column[0]
+                        .utf8()
+                        .unwrap()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    let histograms_parsed = parse_main_histograms(histograms_raw);
+
+                    let client_aggregated = map_sum(histograms_parsed);
+                    let client_normed = normalize_histogram_glam(client_aggregated);
+
+                    client_normed
+                })
+                .collect_into_vec(&mut client_levels);
+
+            let build_histograms = map_sum(client_levels);
+            (build_id, build_histograms.clone())
+        })
+        .collect();
 
     let mut results = Vec::new();
+    builds
+        .par_iter()
+        .map(|(build_id, build_histograms)| {
+            // this is necessary to stop weird floating point behavior
+            let n_reporting = build_histograms.clone().values().sum::<f64>().round();
 
-    for df in partitioned_data {
-        let build_id = df
-            .column("build_id")
-            .unwrap()
-            .str_value(0)
-            .unwrap()
-            .to_string();
-        let client_level_dfs = df.partition_by(["client_id"]).unwrap();
-        let mut client_levels = Vec::new();
+            let dirichlet_transformed_hists = calculate_dirichlet_distribution(
+                build_histograms,
+                histogram_metadata.histogram_type.clone(),
+                n_reporting,
+                histogram_metadata.buckets_for_probe[0],
+                histogram_metadata.buckets_for_probe[1],
+                histogram_metadata.buckets_for_probe[2],
+            )
+            .unwrap();
 
-        for d in client_level_dfs {
-            let metric_column = d.select_series([probe]).unwrap();
+            let result = hist_to_normed_sorted(&dirichlet_transformed_hists);
 
-            let histograms_raw = metric_column[0]
-                .utf8()
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>();
-            let histograms_parsed = parse_main_histograms(histograms_raw);
+            (build_id.to_owned(), result)
+        })
+        .collect_into_vec(&mut results);
 
-            let client_aggregatted = map_sum(histograms_parsed);
-            let client_normed = normalize_histogram_glam(client_aggregatted);
-
-            client_levels.push(client_normed);
-        }
-
-        let build_histograms = map_sum(client_levels);
-        // this is necessary to stop weird floating point behavior
-        let n_reporting = build_histograms.clone().values().sum::<f64>().round();
-
-        let dirichlet_transformed_hists = calculate_dirichlet_distribution(
-            build_histograms,
-            histogram_metadata.histogram_type.clone(),
-            n_reporting,
-            histogram_metadata.buckets_for_probe[0],
-            histogram_metadata.buckets_for_probe[1],
-            histogram_metadata.buckets_for_probe[2],
-        )
-        .unwrap();
-
-        let result = hist_to_normed_sorted(&dirichlet_transformed_hists);
-
-        results.push((build_id, result));
-    }
     Ok(results)
 }
 
