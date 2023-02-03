@@ -3,8 +3,10 @@ import os
 from pathlib import Path
 
 from google.cloud import bigquery
-from mozfun_local.mozfun_local_rust import glam_style_histogram as _glam_style_histogram
 import numpy as np
+
+from google.cloud.bigquery_storage import BigQueryReadClient
+from mozfun_local.mozfun_local_rust import glam_style_histogram as _glam_style_histogram
 import polars as pl
 
 
@@ -79,7 +81,7 @@ def _sql_runner(
     step = int(step * 100)
     if sample_rate is not None:
         assert (
-            sample_rate > 0.0 and sample_rate <= 1.0  # and step <= sample_rate
+            sample_rate > 0.0 and sample_rate <= 1.0
         ), "sample rate must be between zero and one, step must be <= sample rate, and note that cleanly dividing choices will probably result in more predictable behavior, though you may ignore and allow numpy to do whatever it likes."
 
     _limit = f"LIMIT {limit}" if limit else ""
@@ -93,9 +95,6 @@ def _sql_runner(
 
     print(f"got metadata for probe {probe} at {datetime.now()}")
 
-    # probe_string = (", \n    ").join(probe_locations)
-
-    # 0 <= sample_id < 100
     for f in np.arange(step, scaled_sample_rate + step, step):
         if sample_rate:
             sample_id_string = (
@@ -108,6 +107,8 @@ def _sql_runner(
     application.build_id,
     {probe_string},
 FROM {table} as t
+INNER JOIN
+    build_ids b on t.application.build_id = b.build_id and b.channel = t.normalized_channel
 WHERE date(submission_timestamp) = '{date}'
 AND date(submission_timestamp) > date(2022, 12, 20)
 AND {probe_string} is not null
@@ -117,23 +118,27 @@ AND {probe_string} is not null
         project = table.split(".")[0]
         bq_client = bigquery.Client(project=project)
 
-        job_config = bigquery.QueryJobConfig(
-            allow_large_results=True, priority=bigquery.QueryPriority.BATCH
-        )
+        job_config = bigquery.QueryJobConfig(priority=bigquery.QueryPriority.BATCH)
+
+        storage_client = BigQueryReadClient()
 
         print(f"starting query at {datetime.now()}")
         dataset = bq_client.query(sql_query, job_config=job_config).result()
         print(f"got data from bq at {datetime.now()}")
+        dataset = dataset.to_arrow(
+            progress_bar_type="tqdm", bqstorage_client=storage_client
+        ).combine_chunks()
+        print(f"data moved to arrow at {datetime.now()}")
         data = pl.from_arrow(
-            dataset.to_arrow(
-                progress_bar_type="tqdm",
-            ).combine_chunks(),
+            dataset,
             rechunk=False,
         )  # type: pl.DataFrame
-        print(f"data moved to arrow and loaded in polars at {datetime.now()}")
+        print(
+            f"data moved to arrow at {datetime.now()} and loaded in polars at {datetime.now()}"
+        )
 
         df = data.select(["client_id", "build_id", probe])
-        print(f"nulls filtered at {datetime.now()}")
+        print(f"columns selected at {datetime.now()}")
 
         metadata = get_metadata(probe)
         print(f"sending {probe} to Rust at {datetime.now()}")

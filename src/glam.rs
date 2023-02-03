@@ -45,11 +45,11 @@ fn normalize_histogram_glam(hist: HashMap<i64, i64>) -> HashMap<usize, f64> {
 fn map_sum<T: Hash + Eq + Copy, U: AddAssign + Copy>(maps: Vec<HashMap<T, U>>) -> HashMap<T, U> {
     let mut result_map = HashMap::new();
 
-    for m in maps {
+    maps.into_iter().for_each(|m| {
         for (k, v) in m {
             result_map.entry(k).and_modify(|y| *y += v).or_insert(v);
         }
-    }
+    });
 
     result_map
 }
@@ -121,7 +121,6 @@ fn generate_linear_buckets(min: usize, max: usize, n_buckets: usize) -> Vec<usiz
 
         result.push(linear_range);
     }
-
     result
 }
 
@@ -266,7 +265,6 @@ pub fn glam_style_histogram(
                     let client_aggregated = map_sum(histograms_parsed);
                     let client_normed = normalize_histogram_glam(client_aggregated);
 
-                    // client_levels.push(client_normed);
                     client_normed
                 })
                 .collect_into_vec(&mut client_levels);
@@ -281,7 +279,6 @@ pub fn glam_style_histogram(
         .par_iter()
         .map(|(build_id, build_histograms)| {
             // this is necessary to stop weird floating point behavior
-
             let n_reporting = build_histograms.clone().values().sum::<f64>().round();
 
             let dirichlet_transformed_hists = calculate_dirichlet_distribution(
