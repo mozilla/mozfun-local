@@ -6,6 +6,7 @@ pub mod hist;
 pub mod json;
 pub mod map;
 pub mod norm;
+pub mod search_terms;
 pub mod stats;
 
 // Remember to decorate with #[pyfunction]
@@ -28,6 +29,7 @@ fn mozfun_local_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(hist::normalize_histogram, m)?)?;
     m.add_function(wrap_pyfunction!(glam::glam_style_histogram, m)?)?;
+    m.add_function(wrap_pyfunction!(search_terms::sanitize_query, m)?)?;
 
     Ok(())
 }
